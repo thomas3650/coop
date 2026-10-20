@@ -248,7 +248,7 @@ Pin every action by SHA with a version comment, as `HA-NortecGo` does, and set `
 - [x] **Step 2:** Run `uv run pytest packages/coop-client/tests/test_scrub.py -v`. Expected: FAIL.
 - [x] **Step 3:** Implement `scrub.py` with regexes and the key set above. `export_flows.py` reads with `mitmproxy.io.FlowReader` and applies `scrub_json` to JSON bodies and headers, and `scrub_text` to everything else.
 - [x] **Step 4:** Run `uv run pytest -v && uv run mypy`. Expected: PASS.
-- [ ] **Step 5:** Commit and open a PR titled `chore(client): capture scrubber`. Not `feat`, because nothing a user sees changes and `feat` would release.
+- [x] **Step 5:** Commit and open a PR titled `chore(client): capture scrubber`. Not `feat`, because nothing a user sees changes and `feat` would release.
 
 ### Task 8: The static read, as research and as `docs/api.md`
 
