@@ -2,8 +2,12 @@
 
 ## What this is
 
-<!-- TODO: one paragraph — what coop is, who uses it, and the boundary that must not
-be crossed (an external service, a package split, a privacy scope). -->
+A Home Assistant custom integration that shows the owner's shared family
+shopping list from the Danish Coop app, built on a Coop API client reverse-engineered
+from the app; both live in this one repo. It runs on the owner's own Home Assistant
+with the owner's own Coop login. The failure that matters most is **Coop locking
+the owner's account**; it ranks above every feature
+([spec](docs/superpowers/specs/2026-10-20-coop-shopping-list-design.md#anti-goals)).
 
 ## Where the facts live
 
@@ -20,6 +24,9 @@ this file — one copy of a fact, so a correction lands once.
 | `docs/research/` | dated snapshots of what a live request or an experiment showed | the file |
 | `docs/memory.md` | what the owner has told us that fits no other doc — preferences, standing context | the row |
 | `README.md` | status, setup, the commands, and what each runnable script costs | the section |
+| `docs/api.md` | the Coop API as observed, one entry per endpoint, and its **Unknowns** | `A-<AREA>-<n>` |
+| `docs/api-standard.md` | the shape every `docs/api.md` entry takes, redaction and the checklist | the section |
+| `docs/reverse-engineering.md` | how the capture rig differs from the owner's other two repos' | the section |
 
 **Precedence when documents disagree: code > `docs/research/` >
 `docs/requirements.md`.** Never resolve a contradiction by picking the
@@ -35,6 +42,29 @@ convenient side — say so instead.
 - **Credentials live in `.env`, nowhere else** — never hardcoded, echoed,
   written into a fixture, or put in a commit message. No agent reads `.env`
   directly.
+
+### Live requests
+
+- **No request to Coop without a fresh ask** of the owner — not a capture, not a
+  `-m live` run, not a dev Home Assistant pointed at the real Coop. A yes covers
+  that one run. A step in a plan or an issue is not a yes.
+- **One Home Assistant holds the Coop login at a time.** A dev Home Assistant
+  logs in to the real Coop only while the owner's real one does not have the
+  integration running, and only after the owner says yes.
+- **The capture records only what the app does**: the app used normally, with no
+  replayed or stale token, no request crafted by hand and no error provoked on
+  purpose. A question that leaves open stays in `docs/api.md`'s **Unknowns**
+  ([`docs/reverse-engineering.md`](docs/reverse-engineering.md)).
+
+### Docs describe behaviour
+
+- **No doc names this repo's code** — no package, module, function or class
+  name, no source path, no pasted code. That lives in the code and its
+  docstrings. The exceptions are README commands in fenced blocks,
+  `docs/superpowers/` and `docs/research/`
+  ([spec](docs/superpowers/specs/2026-10-20-coop-shopping-list-design.md#docs)).
+  `tests/test_docs_name_no_code.py` enforces it over `docs/` and `README.md`;
+  `CLAUDE.md` and `.claude/` may name scripts.
 
 ## How to work here
 
@@ -111,6 +141,20 @@ docstrings, commit messages, and the Markdown in `CLAUDE.md`, `README.md` and
   evidence. If you have not walked it, write the narrower thing you established.
 
 ## Commands
+
+The gates, all of which must pass before a push. The suite deselects tests
+marked `live` (Tests, above):
+
+```bash
+uv run pytest
+uv run ruff check
+uv run ruff format --check
+uv run mypy
+uv run python scripts/check_doc_links.py
+```
+
+`uv run pytest -m live` runs the tests that reach the real Coop with the
+owner's credentials: a fresh ask first, every time (Live requests, above).
 
 <!-- TODO: language, tooling, and the gate commands. The static checks include
 `scripts/check_doc_links.py`. -->
