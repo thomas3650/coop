@@ -19,6 +19,9 @@ change here is one table row.**
 | `docs/domain-language.md` | the project's vocabulary | one term + its definition + what it is not |
 | `docs/memory.md` | what the owner told us that fits no other doc | one row: item + why; delete the row when it stops being true |
 | `docs/research/` | a dated snapshot of something a live request or an experiment showed | a new dated file, plus its row in `docs/research/README.md`; not kept up to date |
+| `docs/api.md` | the Coop API as observed: hosts, the bootstrap, one entry per endpoint, and **Unknowns** | one entry in the shape `docs/api-standard.md` sets, every claim **measured** or **inferred**; never a decompiled class name |
+| `docs/api-standard.md` | the shape of a `docs/api.md` entry, redaction and the checklist | change only when the standard itself changes |
+| `docs/reverse-engineering.md` | how this project's capture rig differs from nortecgo's and nota's | one delta row; what a run showed goes in `docs/research/` |
 | `CLAUDE.md` | the rules an agent must not break | a rule, only when it binds behaviour |
 
 Precedence when documents disagree: **code > `docs/research/` >
@@ -38,7 +41,14 @@ Precedence when documents disagree: **code > `docs/research/` >
 - **Never write an absolute you have not walked.** Walk the call graph to the
   leaf, or read the payload in `docs/research/`. If you have not, write the
   narrower thing you established.
+- **Docs describe behaviour.** Outside `docs/superpowers/` and `docs/research/`,
+  no doc names this repo's packages, modules, functions or classes, a source
+  path, or pasted code; a README command is allowed in a fenced block
+  (`CLAUDE.md`, Docs describe behaviour). `tests/test_docs_name_no_code.py`
+  enforces it.
 - Use the terms in `docs/domain-language.md`.
 - Never write a credential, a token, a real name or an email into a doc.
-- After editing, run `uv run python scripts/check_doc_links.py` (or `python3`
-  without uv); a broken link or anchor fails it.
+- After editing, `git add` the docs, then run
+  `uv run python scripts/check_doc_links.py` (or `python3` without uv) and
+  `uv run pytest tests/test_docs_name_no_code.py`. The link check reads tracked
+  files only, so an unstaged new doc goes unchecked.

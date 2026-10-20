@@ -24,17 +24,24 @@ diff was *supposed* to do; this file is how you judge what it actually did.
 
 ## What you are looking for, in order
 
-<!-- TODO: put this project's most expensive failure first, above the rest. -->
-1. **Breaks of `CLAUDE.md`'s non-negotiable rules.**
-2. **Absolutes nobody walked.** "makes no request", "never calls", "carries no
+1. **A change that raises the account-lock risk** — the failure `CLAUDE.md`
+   ("What this is") ranks first (`docs/requirements.md` R-ACCOUNT-1). A login Home Assistant
+   repeats on its own, a refused refresh that does not stop it, a retry without
+   back-off, a request the app does not make, a rotated refresh token used before
+   it is stored, a second Home Assistant on the same login, a live request nobody
+   asked for. Name the request and when it would be sent.
+2. **Breaks of `CLAUDE.md`'s non-negotiable rules.**
+3. **Absolutes nobody walked.** "makes no request", "never calls", "carries no
    `X`" are claims about code and captured bytes. For each one in the diff — prose,
    comment or docstring — say which instrument backs it: the call graph walked to
    the leaf, or a payload in `docs/research/`. A neighbouring docstring, a trimmed
    fixture and a green suite are **not** evidence. If nothing backs it, the
    finding is: write the narrower true claim instead.
-3. **Secrets.** A credential outside `.env`, or one that reaches a log line, a
-   `repr`, an exception message or a fixture.
-4. **Tests.** Was there a red test before the code (`git log -p` over the task's
+4. **Secrets.** A credential outside `.env` in the repo tree, or one that reaches
+   a log line, a `repr`, an exception message or a fixture. At runtime the
+   refresh token lives in Home Assistant's config entry on the owner's Home
+   Assistant; that is not a breach.
+5. **Tests.** Was there a red test before the code (`git log -p` over the task's
    commits shows the order)? Does the test assert the invariant it claims to?
    - **Every safety guard needs a test that would fail without it.** Establish it
      by reading: name the test, and say which assertion fails when the guard is
@@ -47,12 +54,12 @@ diff was *supposed* to do; this file is how you judge what it actually did.
      ask what a second caller does before, during and after the first — and
      whether the concurrency test really interleaves them.
    - The suite is **offline**. A new test that reaches a live service is a finding.
-5. **Doc prose laws** — the `writing-coop-docs` skill is the full set; invoke it
+6. **Doc prose laws** — the `writing-coop-docs` skill is the full set; invoke it
    when the diff touches a doc. Edit-history narration, and a fact restated
    instead of linked, are findings.
-6. **Domain language.** Naming that contradicts `docs/domain-language.md`, or a
-   new domain concept with no row there, is a finding. Ranks below 1–5.
-7. Ordinary correctness, then reuse and simplification.
+7. **Domain language.** Naming that contradicts `docs/domain-language.md`, or a
+   new domain concept with no row there, is a finding. Ranks below 1–6.
+8. Ordinary correctness, then reuse and simplification.
 
 ## Run nothing
 

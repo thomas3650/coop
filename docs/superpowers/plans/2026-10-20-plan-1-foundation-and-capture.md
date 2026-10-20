@@ -151,9 +151,9 @@ Invoke `writing-coop-docs` first. Content comes from the spec's [Docs](../specs/
   - `.claude/skills/examining-coop-endpoints/SKILL.md`: the sources to check, cheapest first: `docs/api.md`, `docs/research/` payloads, the decompiled app, then the wire. The wire needs a fresh ask.
   - `.claude/skills/talking-to-home-assistant/SKILL.md`: adapted from nota's. Real HA through `mcp__home-assistant__*` only; reads are free; each change is asked for; the dashboard is not this repo's; one HA holds the Coop login.
 
-- [ ] **Step 1:** Write the docs.
-- [ ] **Step 2:** Run `uv run python scripts/check_doc_links.py` and `uv run pytest tests/test_docs_name_no_code.py`. Expected: 0 broken links; PASS.
-- [ ] **Step 3:** Commit and open a PR titled `docs: fill the project docs, skills and agents`.
+- [x] **Step 1:** Write the docs.
+- [x] **Step 2:** Run `uv run python scripts/check_doc_links.py` and `uv run pytest tests/test_docs_name_no_code.py`. Expected: 0 broken links; PASS.
+- [x] **Step 3:** Commit and open a PR titled `docs: fill the project docs, skills and agents`.
 
 ### Task 4: CI checks
 
