@@ -608,3 +608,38 @@ def test_brackets_in_a_key_do_not_hide_its_suffix() -> None:
         ["listIds[]", "<id>"],
         ["listIds[]", "<id>"],
     ]
+
+
+def test_known_secret_matches_a_json_number() -> None:
+    assert scrub_json({"count": 1234567, "n": 2}, secrets=["1234567"]) == {
+        "count": "<redacted>",
+        "n": 2,
+    }
+
+
+def test_multipart_part_that_is_not_utf8_becomes_binary() -> None:
+    boundary = "XyZb0undary"
+    body = (
+        f'--{boundary}\r\nContent-Disposition: form-data; name="upload"\r\n\r\n'.encode()
+        + b"\xff\xfe\x00raw"
+        + f"\r\n--{boundary}--\r\n".encode()
+    )
+    out = scrub_multipart(body, f"multipart/form-data; boundary={boundary}")
+    assert out == [["upload", "<binary>"]]
+
+
+def test_data_attributes_are_not_the_name_or_type_attribute() -> None:
+    html = '<input data-name="code" data-type="hidden" name="scope" type="text" value="openid">'
+    assert scrub_text(html) == html
+
+
+def test_masks_escaped_json_pairs_in_text() -> None:
+    text = 'payload={\\"refresh_token\\":\\"rt-s3cr3t\\",\\"keep\\":\\"ok\\"}'
+    out = scrub_text(text)
+    assert "rt-s3cr3t" not in out
+    assert '\\"keep\\":\\"ok\\"' in out
+
+
+@pytest.mark.parametrize("key", ["kunde", "kundenr", "kundenummer", "kundeNavn"])
+def test_masks_danish_customer_keys(key: str) -> None:
+    assert scrub_json({key: "k-s3cr3t"}) == {key: "<redacted>"}

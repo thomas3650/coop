@@ -65,7 +65,7 @@ uv run --no-project --with mitmproxy --with-editable ./packages/coop-client pyth
 
 | Runnable | What it costs |
 |---|---|
-| The flow export | Reads one capture file and writes into the folder it is given, which must be empty; no request to Coop. uv fetches mitmproxy from PyPI when its cache lacks it. Each `--ask-secret` prompts, without echo, for a value to mask wherever it appears; it is not written anywhere. `.captures/` is gitignored; the output is still read by hand before anything from it is committed. |
+| The flow export | Reads one capture file and writes into the folder it is given, which must be empty; no request to Coop. uv fetches mitmproxy from PyPI when its cache lacks it. Each `--ask-secret` prompts, without echo, for a known value, which is then masked in every spelling the scrubber knows; the export does not write it to disk. `.captures/` is gitignored; the output is still read by hand before anything from it is committed. |
 | The export self-check | Writes a made-up capture into a temporary folder, exports it and fails if a planted secret survives; no request to Coop. |
 
 The dev Home Assistant at `http://localhost:8123`, with the integration linked from the working

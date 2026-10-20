@@ -23,6 +23,7 @@ The result is still read by hand before anything derived from it is committed.
 import argparse
 import getpass
 import json
+import re
 import sys
 from collections.abc import Iterable, Iterator
 from pathlib import Path
@@ -68,19 +69,32 @@ def _json_lines(text: str, secrets: tuple[str, ...]) -> list[object] | None:
         return None
 
 
-def _event_stream(text: str, secrets: tuple[str, ...]) -> list[object]:
-    """Server-sent events line by line: a `data:` line holding JSON as scrubbed JSON,
-    every other line by `scrub_text`."""
-    out: list[object] = []
-    for line in text.splitlines():
-        if line.startswith("data:"):
-            try:
-                out.append(scrub_json(json.loads(line[5:]), secrets=secrets))
-                continue
-            except ValueError:
-                pass
-        out.append(scrub_text(line, secrets))
-    return out
+def _event_stream(text: str, secrets: tuple[str, ...]) -> list[dict[str, object]]:
+    """Server-sent events, one `{"fields", "data"}` record per event.
+
+    An event's `data:` lines are joined, as the event-stream format joins them, and
+    the result is scrubbed as JSON when it parses, else by `scrub_text`. Its other
+    lines (`event:`, comments) are scrubbed together by `scrub_text`, with an `id:`
+    line's value as `<id>`.
+    """
+    events: list[dict[str, object]] = []
+    for block in re.split(r"\r?\n\r?\n", text):
+        lines = block.splitlines()
+        if not lines:
+            continue
+        data = [line[5:].removeprefix(" ") for line in lines if line.startswith("data:")]
+        fields = "\n".join(
+            "id: <id>" if line.startswith("id:") else line
+            for line in lines
+            if not line.startswith("data:")
+        )
+        joined = "\n".join(data)
+        try:
+            scrubbed: object = scrub_json(json.loads(joined), secrets=secrets)
+        except ValueError:
+            scrubbed = scrub_text(joined, secrets)
+        events.append({"fields": scrub_text(fields, secrets), "data": scrubbed if data else None})
+    return events
 
 
 def scrub_body(body: bytes | None, content_type: str, secrets: Iterable[str] = ()) -> object:
@@ -108,7 +122,7 @@ def scrub_body(body: bytes | None, content_type: str, secrets: Iterable[str] = (
     lines = _json_lines(text, secrets)
     if lines is not None:
         return lines
-    if "text/event-stream" in kind or any(line.startswith("data:") for line in text.splitlines()):
+    if "text/event-stream" in kind:
         return _event_stream(text, secrets)
     return scrub_text(text, secrets)
 
@@ -150,6 +164,10 @@ def write_record(out_dir: Path, name: str, record: object) -> Path:
     return target
 
 
+def _not_empty(out_dir: Path) -> bool:
+    return out_dir.exists() and any(out_dir.iterdir())
+
+
 def export(flows: Iterable[Any], out_dir: Path, secrets: Iterable[str] = ()) -> int:
     """Write each flow to `out_dir/NNNN.json`; return how many files were written.
 
@@ -159,7 +177,7 @@ def export(flows: Iterable[Any], out_dir: Path, secrets: Iterable[str] = ()) -> 
     is not kept: it can quote the flow.
     """
     secrets = tuple(secrets)
-    if out_dir.exists() and any(out_dir.iterdir()):
+    if _not_empty(out_dir):
         raise OutDirNotEmptyError(str(out_dir))
     out_dir.mkdir(parents=True, exist_ok=True)
     index = 0
@@ -201,6 +219,10 @@ def main(argv: list[str]) -> int:
         help="prompt, without echo, for one known secret to mask; repeat for more",
     )
     args = parser.parse_args(argv)
+    # Before the prompts, so a refused export never asks for a secret.
+    if _not_empty(args.out_dir):
+        print(f"refusing: {args.out_dir} is not empty", file=sys.stderr)
+        return 2
     secrets = [
         getpass.getpass(f"Secret {number} to mask: ") for number in range(1, args.ask_secret + 1)
     ]

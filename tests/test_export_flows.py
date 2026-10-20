@@ -228,16 +228,30 @@ def test_ndjson_body_scrubbed_line_by_line(tmp_path: Path) -> None:
     ]
 
 
-def test_sse_data_lines_scrubbed_as_json(tmp_path: Path) -> None:
-    body = b'event: update\ndata: {"refresh_token": "rt-s3cr3t"}\n\ndata: plain c0de=1\n'
+def test_sse_events_scrubbed_with_their_data_as_json(tmp_path: Path) -> None:
+    body = (
+        b'event: update\ndata: {"refresh_token":\ndata: "rt-s3cr3t"}\n\nid: 7\ndata: plain c0de=1\n'
+    )
     out = _response_body(tmp_path, body, "text/event-stream")
     assert out == [
-        "event: update",
-        {"refresh_token": "<redacted>"},
-        "",
-        "data: plain c0de=1",
+        {"fields": "event: update", "data": {"refresh_token": "<redacted>"}},
+        {"fields": "id: <id>", "data": "plain c0de=1"},
     ]
     assert "rt-s3cr3t" not in json.dumps(out)
+
+
+def test_a_data_line_outside_an_event_stream_keeps_whole_text_masking(tmp_path: Path) -> None:
+    html = (
+        b"<p>\ndata: shown in the page\n</p>\n"
+        b'<input type="text"\n'
+        b'       name="code"\n'
+        b'       value="c0de-s3cr3t" />\n'
+        b'<pre>{\n  "address": {\n    "street": "Hidden Way 1"\n  }\n}</pre>\n'
+    )
+    out = _response_body(tmp_path, html, "text/html")
+    assert isinstance(out, str)
+    assert "c0de-s3cr3t" not in out
+    assert "Hidden Way" not in out
 
 
 def test_multipart_body_scrubbed_by_part_name(tmp_path: Path) -> None:
@@ -270,30 +284,63 @@ def test_known_secrets_are_masked_in_every_spelling(tmp_path: Path) -> None:
         assert spelling not in raw
 
 
-def test_main_asks_for_each_secret_without_writing_it(
+def test_main_asks_for_each_secret_and_writes_none_of_them(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    secrets = ["first-s3cr3t", "second-s3cr3t"]
     asked: list[str] = []
-    answers = iter(["first-s3cr3t", "second-s3cr3t"])
+    answers = iter(secrets)
 
     def fake_getpass(prompt: str = "") -> str:
         asked.append(prompt)
         return next(answers)
 
-    received: list[list[str]] = []
-
-    def fake_export(flows: object, out_dir: Path, secrets: list[str]) -> int:
-        received.append(list(secrets))
-        return 0
-
+    flow = _flow(
+        response_headers=[("X-Echo", secrets[0])],
+        response_body=json.dumps({"note": f"{secrets[1]} here"}).encode(),
+    )
     monkeypatch.setattr(getpass, "getpass", fake_getpass)
-    monkeypatch.setattr(export_flows, "export", fake_export)
-    monkeypatch.setattr(export_flows, "_read_flows", lambda path: iter(()))
-    argv = [str(tmp_path / "c.flows"), str(tmp_path / "out"), "--ask-secret", "--ask-secret"]
+    monkeypatch.setattr(export_flows, "_read_flows", lambda path: iter([flow]))
+    out_dir = tmp_path / "out"
+    argv = [str(tmp_path / "c.flows"), str(out_dir), "--ask-secret", "--ask-secret"]
     assert export_flows.main(argv) == 0
     assert len(asked) == 2
-    assert received == [["first-s3cr3t", "second-s3cr3t"]]
     assert all("s3cr3t" not in prompt for prompt in asked)
+    written = [p for p in tmp_path.rglob("*") if p.is_file()]
+    assert [p.name for p in written] == ["0000.json"]
+    for path in written:
+        content = path.read_bytes()
+        for secret in secrets:
+            assert secret.encode() not in content
+
+
+def test_main_refuses_a_non_empty_out_dir_before_asking(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    asked: list[str] = []
+
+    def fake_getpass(prompt: str = "") -> str:
+        asked.append(prompt)
+        return "x"
+
+    (tmp_path / "old.json").write_text("{}")
+    monkeypatch.setattr(getpass, "getpass", fake_getpass)
+    monkeypatch.setattr(export_flows, "_read_flows", lambda path: iter([_flow()]))
+    argv = [str(tmp_path / "c.flows"), str(tmp_path), "--ask-secret"]
+    assert export_flows.main(argv) == 2
+    assert asked == []
+    assert _written(tmp_path) == ["old.json"]
+
+
+def test_known_secret_held_as_a_json_number_is_masked(tmp_path: Path) -> None:
+    flow = _flow(response_body=b'{"kundenr": 1234567, "count": 1234567, "other": 7}')
+    export_flows.export([flow], tmp_path, secrets=["1234567"])
+    record = json.loads((tmp_path / "0000.json").read_text())
+    assert record["response"]["body"] == {
+        "kundenr": "<redacted>",
+        "count": "<redacted>",
+        "other": 7,
+    }
 
 
 def test_refuses_a_non_empty_out_dir(tmp_path: Path) -> None:

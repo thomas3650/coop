@@ -48,7 +48,7 @@ _SECRET_KEY_PARTS = (
     "address",
     "member",
     # Danish: name, address, street, postcode, phone, mobile, member, password,
-    # date of birth, civil registration number.
+    # date of birth, civil registration number, customer.
     "navn",
     "adresse",
     "vej",
@@ -62,6 +62,7 @@ _SECRET_KEY_PARTS = (
     "fødselsdato",
     "foedselsdato",
     "cpr",
+    "kunde",
 )
 # A key ending in any of these is masked whole: the login form's `Input.Code` and
 # `TwoFactorCode`, `apiKey`, `clientKey`, `oauth_state`, `oidc_nonce`.
@@ -167,8 +168,11 @@ _INPUT_TAG = re.compile(r"<input\b[^>]*>", re.IGNORECASE)
 
 
 def _attribute(name: str) -> re.Pattern[str]:
-    """An HTML attribute, its value double-quoted, single-quoted or bare."""
-    return re.compile(rf"(\b{name}\s*=\s*)(?:\"([^\"]*)\"|'([^']*)'|([^\s>\"']+))", re.IGNORECASE)
+    """An HTML attribute, its value double-quoted, single-quoted or bare. Not the
+    tail of a longer attribute name such as `data-{name}`."""
+    return re.compile(
+        rf"((?<![\w-]){name}\s*=\s*)(?:\"([^\"]*)\"|'([^']*)'|([^\s>\"']+))", re.IGNORECASE
+    )
 
 
 _ATTR_NAME = _attribute("name")
@@ -177,6 +181,8 @@ _ATTR_VALUE = _attribute("value")
 # An input whose value is masked whatever its name.
 _MASKED_INPUT_TYPES = frozenset({"password", "hidden"})
 # `"key": value` in JSON text: a string (escapes included) or a bare scalar.
+# `\"key\": value` in JSON that is itself inside a JSON string.
+_ESCAPED_JSON_PAIR = re.compile(r'(\\")([^"\\]{1,100})\\"(\s*:\s*)(\\".*?\\"|[^,}\]\s\\]+)')
 _JSON_PAIR = re.compile(
     r"([\"'])([^\"'\\]{1,100})\1(\s*:\s*)(\"(?:[^\"\\]|\\.)*\"|'(?:[^'\\]|\\.)*'|[^,}\]\s]+)"
 )
@@ -276,6 +282,14 @@ def _mask_json_pair(match: re.Match[str]) -> str:
     return f'{quote_char}{key}{quote_char}{colon}"{mask}"'
 
 
+def _mask_escaped_json_pair(match: re.Match[str]) -> str:
+    escaped_quote, key, colon, _value = match.groups()
+    mask = _mask_for(key)
+    if mask is None:
+        return match.group(0)
+    return f"{escaped_quote}{key}{escaped_quote}{colon}{escaped_quote}{mask}{escaped_quote}"
+
+
 def _pair_masker(match: re.Match[str]) -> str:
     key, sep, _value = match.groups()
     mask = _mask_for(key)
@@ -289,6 +303,7 @@ _RULES: list[tuple[re.Pattern[str], str | Callable[[re.Match[str]], str]]] = [
     (_BEARER, r"\1 <token>"),
     (_SESSION_COOKIE, r"\1" + REDACTED),
     (_INPUT_TAG, _mask_input_tag),
+    (_ESCAPED_JSON_PAIR, _mask_escaped_json_pair),
     (_JSON_PAIR, _mask_json_pair),
     (_ENCODED_PAIR, _pair_masker),
     (_PLAIN_PAIR, _pair_masker),
@@ -337,12 +352,12 @@ def _scrub_json(value: object, secrets: tuple[str, ...], context: str | None) ->
         return [_scrub_json(item, secrets, context) for item in value]
     if isinstance(value, str):
         return _scrub_string(value, secrets, context)
-    if (
-        isinstance(value, int)
-        and not isinstance(value, bool)
-        and _PHONE_NUMBER.fullmatch(str(value))
-    ):
-        return REDACTED
+    if isinstance(value, int | float) and not isinstance(value, bool):
+        # A known secret held as a number: a member number, say.
+        if str(value) in secrets:
+            return REDACTED
+        if isinstance(value, int) and _PHONE_NUMBER.fullmatch(str(value)):
+            return REDACTED
     return value
 
 

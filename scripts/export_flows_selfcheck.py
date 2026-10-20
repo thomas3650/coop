@@ -50,6 +50,7 @@ def main() -> int:
     # One response per Content-Encoding mitmproxy can write here. Setting `content`
     # after the header makes mitmproxy compress the body, so the capture holds the
     # encoded bytes and the export has to decode them.
+    problems: list[str] = []
     encoded = []
     for encoding in _encodings():
         flow = tflow.tflow(resp=True)
@@ -59,7 +60,8 @@ def main() -> int:
         flow.response.content = json.dumps(
             {"refresh_token": planted["refresh_token"], "token_type": "Bearer"}
         ).encode()
-        assert flow.response.raw_content != flow.response.content, encoding
+        if flow.response.raw_content == flow.response.content:
+            problems.append(f"{encoding}: mitmproxy did not compress the body")
         encoded.append((encoding, flow))
 
     # A body whose Content-Encoding is a lie: `get_content(strict=False)` hands back
@@ -83,21 +85,27 @@ def main() -> int:
         for name, text in texts.items():
             print(f"--- {name}")
             print(text)
-    problems = [
+    problems += [
         f"{name}: {label} leaked"
         for name, text in texts.items()
         for label, value in planted.items()
         if value in text
     ]
-    if len(texts) != len(flows):
-        problems.append(f"{len(texts)} files for {len(flows)} flows")
+    expected_names = [f"{index:04d}.json" for index in range(len(flows))]
+    missing = [name for name in expected_names if name not in texts]
+    if missing or len(texts) != len(flows):
+        problems.append(f"{len(texts)} files for {len(flows)} flows; missing {missing}")
     for index, (encoding, _) in enumerate(encoded, start=2):
-        body = _response_body(texts[f"{index:04d}.json"])
-        if body != {"refresh_token": "<redacted>", "token_type": "Bearer"}:
-            problems.append(f"{encoding} body exported as {body!r}")
-    broken_body = _response_body(texts[f"{len(flows) - 1:04d}.json"])
-    if broken_body != "<binary>":
-        problems.append(f"undecodable body exported as {broken_body!r}")
+        name = f"{index:04d}.json"
+        if name in texts:
+            body = _response_body(texts[name])
+            if body != {"refresh_token": "<redacted>", "token_type": "Bearer"}:
+                problems.append(f"{encoding} body exported as {body!r}")
+    broken_name = expected_names[-1]
+    if broken_name in texts:
+        broken_body = _response_body(texts[broken_name])
+        if broken_body != "<binary>":
+            problems.append(f"undecodable body exported as {broken_body!r}")
     if problems:
         print(f"FAIL: {problems}", file=sys.stderr)
         return 1
