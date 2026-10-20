@@ -105,10 +105,29 @@ below is **inferred**, none is measured. The findings go into a dated
   integration. Ruff, mypy strict on the client, pytest with the live marker
   deselected by default (`CLAUDE.md`, Tests).
 - **CI.** Offline only: static checks and the suite, on every pull request.
+- **CI checks**, after the pattern of the owner's `HA-NortecGo` repo:
+  - lint and tests;
+  - `hassfest` and HACS validation;
+  - a secret scan (gitleaks).
 - **Renovate.** Configuration for Python dependencies and GitHub Actions.
-- **Release pipeline.** A version tag runs the gates, copies the client into
-  the integration folder, and publishes a GitHub release with the integration
-  zip HACS installs.
+- **Release pipeline**, the owner's decision: a release is a workflow that runs
+  after a merge to `main`, never a hand-pushed tag. The pattern is
+  `HA-NortecGo`'s auto-release and version-check workflows, and its
+  `docs/releasing.md`.
+  - **PR titles.** Every PR title is `type(scope)!: text`, checked on every PR.
+    - `fix` and `perf` release a patch.
+    - `feat` releases a minor version.
+    - `docs`, `chore`, `ci`, `test` and `refactor` release nothing.
+  - **On release.** When the checks on `main` pass after a releasing merge,
+    the workflow:
+    1. copies the client into the integration folder;
+    2. tags the version;
+    3. publishes a GitHub release with the integration zip HACS installs.
+  - **How the version is bumped** is the builder's to settle. `HA-NortecGo`
+    bumps it on the PR branch; a bump decided after the merge is equally
+    acceptable.
+  - **Autonomy.** No release needs a separate ask: merging a releasing PR is
+    what releases it. The agent merges when ready, as the owner set out.
 - **GitHub.** The repo itself, secret scanning and push protection. Creating
   the public GitHub repo is outward-facing, so it waits for the owner's yes
   after this spec is approved. The plan's tasks are then filed as GitHub issues
@@ -145,6 +164,21 @@ login.
   uncompleted, nothing else.
 - Afterwards the owner checks whether their phone is still logged in.
 
+**Only what the app does**, the owner's decision. The capture records the app
+being used normally and nothing more:
+
+- no replayed or stale token;
+- no request crafted by hand;
+- no error provoked on purpose.
+
+A question the normal session does not answer stays open in `docs/api.md`'s
+**Unknowns**. The client then handles that case defensively:
+
+- every refresh token is treated as use-once, and the new one is stored
+  before the next request;
+- an unrecognised error is treated as a temporary failure, never as a reason
+  to log in again.
+
 **It must answer:**
 
 | Question | Why it matters |
@@ -152,15 +186,28 @@ login.
 | What the login page asks for: email and password, MitID, or a code | Decides what the HA setup screen asks for |
 | Which redirect URI the configuration actually serves, and whether it is a custom scheme (the manifest declares `coop-member` and `coop-member-app`) | Decides whether "log in in a browser, copy the address back" works from a desktop browser |
 | Whether one refresh token covers the `shopping-list` scope, or that scope needs its own authorization | Decides the token handling in the client |
-| Whether refresh tokens rotate, and what a reused old one does | A server in the IdentityServer style may revoke the whole token family on reuse, which is a lock risk |
+| Whether refresh tokens rotate, as the normal session shows it (what a reused old one does is not tested) | A server in the IdentityServer style may revoke the whole token family on reuse, which is a lock risk |
 | Whether a second session logs the phone out | If it does, HA moves to a separate Coop account invited to the shared list |
 | The real shape of the list and item payloads, the add, complete and uncomplete requests, and the errors | The client is written against measured payloads, not guesses |
 
 Every answer goes into `docs/api.md` as a measured entry, plus a dated
 research file with scrubbed, trimmed payloads, which the offline tests replay.
-If an answer kills the plan, for example login needs the phone or a second
-session logs the phone out with no workaround, the phase stops and the owner
-decides.
+**When the work stops for the owner.** The phase stops and the owner decides
+if the capture shows:
+
+- the login needs the phone;
+- a second session logs the phone out (the fallback, a separate Coop account,
+  is one the owner would have to create);
+- any other answer that breaks the plan.
+
+**Two plans** (the builder's call):
+
+- **Plan 1, written now:** the repo foundation and the capture.
+- **Plan 2, written after the capture:** the client, the integration and the
+  local checks.
+
+Nothing is built on payloads that were only inferred. Plan 1's tasks are filed
+as issues once the repo exists; plan 2's are filed when that plan is written.
 
 ### 3. The Coop client
 
@@ -172,7 +219,7 @@ An async Python library that speaks Coop's API and nothing else. It:
   exchanges the code;
 - refreshes the access token and reports every rotated refresh token to its
   caller at once, so the caller can store it before using it;
-- reads the lists, picks the shared one, and reads its items;
+- reads the lists and the chosen list's items;
 - adds a free-text item with quantity 1, completes an item, uncompletes an
   item.
 
@@ -183,6 +230,14 @@ Its errors tell the caller three things apart:
 - a refused refresh, after which the owner must log in again;
 - a temporary failure, after which the caller backs off;
 - a list or item that no longer exists.
+
+**Looking like the app** (the builder's call):
+
+- It fetches the remote configuration once when it starts, as the app does at
+  launch, not before every request.
+- It sends the headers the capture shows the app sending.
+- Where the app sends an installation id, the client uses one of its own,
+  generated once and stored. It never uses the phone's.
 
 Tested offline against a fake that serves the captured payloads.
 
@@ -196,6 +251,14 @@ Tested offline against a fake that serves the captured payloads.
   the builder's to settle then.
 - The refresh token is stored in the config entry. A rotated one is written
   back at once.
+
+**Which list** (the builder's call):
+
+- If the account has one list, setup uses it.
+- If it has several, setup asks the owner to pick one.
+- The list's id is stored in the config entry.
+- If that list later disappears, HA raises a repair issue. It never picks
+  another list on its own.
 
 **Entities.**
 
