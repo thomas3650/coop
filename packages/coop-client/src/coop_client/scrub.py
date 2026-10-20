@@ -165,7 +165,7 @@ _JWT = re.compile(
     r"eyJ[A-Za-z0-9_-]{5,}(?:\.[A-Za-z0-9_-]*)+|(?<![A-Za-z0-9_-])eyJ[A-Za-z0-9_-]{10,}"
 )
 # The scheme and its value split by whitespace, or by `+` or `%20` in a form or a URL.
-_BEARER = re.compile(r"\b(Bearer)(?:\s|\+|%20)+[^\s\"',;&+]+", re.IGNORECASE)
+_BEARER = re.compile(r"\b(Bearer)(?:\s|\+|%20)+[^\s\"',;&]+", re.IGNORECASE)
 # The cookie's name, then `=` (`%3D`, `%253D` once or twice encoded), then its value up
 # to the end of the cookie or of a query pair, plain or encoded.
 _SESSION_COOKIE = re.compile(

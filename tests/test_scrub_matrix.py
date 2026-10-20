@@ -305,11 +305,13 @@ def test_secret_key_masked_in_every_carrier(key: str, kind_name: str) -> None:
 
 @dataclass(frozen=True)
 class Shape:
-    """A value masked by its shape; `secret` is the part that must not survive."""
+    """A value masked by its shape; `secret` is the part that must not survive, and
+    none of `fragments` either."""
 
     value: str
     placeholder: str
     secret: str = ""
+    fragments: tuple[str, ...] = ()
 
 
 def _jwt() -> str:
@@ -318,7 +320,7 @@ def _jwt() -> str:
 
 SHAPES = {
     "jwt": Shape(_jwt(), "<JWT>"),
-    "bearer": Shape("Bearer " + "br7tok", "Bearer <token>", "br7tok"),
+    "bearer": Shape("Bearer " + "br7+tok/x=", "Bearer <token>", "br7+tok/x=", ("br7", "tok/x")),
     "idsrv_cookie": Shape("idsrv=" + "ck7val", "<redacted>", "ck7val"),
     "aspnetcore_cookie": Shape(
         ".AspNetCore.Identity.Application=" + "ck8val",
@@ -357,7 +359,7 @@ def test_shape_masked_under_an_unknown_key_in_every_carrier(shape_name: str) -> 
         f"{carrier} via {path}": output
         for carrier, outputs in cases.items()
         for path, output in outputs.items()
-        if any(s in output for s in _spellings(secret)) or KEEP not in output
+        if any(s in output for s in {*_spellings(secret), *shape.fragments}) or KEEP not in output
     }
     assert sorted(failures) == []
     missing_placeholder = sorted(
