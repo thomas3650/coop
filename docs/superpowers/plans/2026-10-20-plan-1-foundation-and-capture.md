@@ -153,7 +153,7 @@ Invoke `writing-coop-docs` first. Content comes from the spec's [Docs](../specs/
 
 - [x] **Step 1:** Write the docs.
 - [x] **Step 2:** Run `uv run python scripts/check_doc_links.py` and `uv run pytest tests/test_docs_name_no_code.py`. Expected: 0 broken links; PASS.
-- [ ] **Step 3:** Commit and open a PR titled `docs: fill the project docs, skills and agents`.
+- [x] **Step 3:** Commit and open a PR titled `docs: fill the project docs, skills and agents`.
 
 ### Task 4: CI checks
 
