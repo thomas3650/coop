@@ -24,7 +24,7 @@ this repo's, and it is driven through Chrome (`docs/requirements.md` R-REPO-2).
 | **Reads need no ask** | The "Read" rows below. |
 | **Every change is asked for, one at a time** | The "Change" rows below. A yes covers that action only; a step in a plan or an issue is not a yes. |
 | **Never delete from the Coop list** | `ha_remove_todo_item`, and "remove completed items", on the Coop list's entity: not from here, whatever the reason (R-LIST-6). Adding or ticking an item with `ha_set_todo_item` changes the family's real list: ask for each one. |
-| **One Home Assistant holds the Coop login** | Before a dev Home Assistant logs in to the real Coop, or a capture runs, the integration here is disabled — on the owner's yes — and enabled again afterwards, also on a yes (`CLAUDE.md`, Live requests). |
+| **One Coop session at a time** | The precondition, with its full scope, is [`CLAUDE.md`, Live requests](../../../CLAUDE.md#live-requests). Meeting it here means disabling the integration — on the owner's yes — and enabling it again afterwards, also on a yes. |
 | **The dashboard is the owner's** | Adding the list card to the real dashboard is the owner's job. Dashboards, automations, areas, labels and other integrations are not this repo's; do not touch them from here. |
 | **The token stays out of this repo** | It lives in Claude Code's user config; there is no `.mcp.json` in this repo. Never print it, copy it into a file, a doc or a commit. |
 | **A log is scrubbed before it leaves the session** | A Home Assistant log holds more than this integration's lines. Scrub it, then take only the lines the question needs into a doc, an issue or a PR. List content is personal data ([redaction](../../../docs/api-standard.md#redaction)). |
@@ -35,14 +35,14 @@ this repo's, and it is driven through Chrome (`docs/requirements.md` R-REPO-2).
 |---|---|---|
 | The integration's config entry and its state | `ha_get_integration` | Read |
 | An entity's state, e.g. the Coop list's to-do entity | `ha_get_state`, `ha_get_entity` | Read |
-| The items of a to-do entity | `ha_get_todo` | Read |
+| The items of a to-do entity, as Home Assistant last read them | `ha_get_todo` | Read — only of Home Assistant's cached state; a fresh read from Coop is the refresh row below |
 | Home Assistant's log | `ha_get_logs` | Read |
 | Versions and health | `ha_get_system_health`, `ha_get_overview` | Read |
 | HACS: installed repositories and versions | `ha_get_hacs_info` | Read |
 | Install or update the integration through HACS | `ha_manage_hacs` | **Change** |
 | Add, reload, enable or disable the integration | `ha_set_integration` | **Change** |
 | Add or tick an item | `ha_set_todo_item` | **Change** |
-| Press the refresh button | `ha_call_service` | **Change** — it sends a request to Coop |
+| Press the integration's refresh button, or call `homeassistant.update_entity` on its entities | `ha_call_service` | **Change** — a request to Coop; ask first |
 | Restart Home Assistant | `ha_restart` | **Change** |
 
 Each tool describes its own parameters. After a change with an unknown outcome

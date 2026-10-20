@@ -34,27 +34,36 @@ convenient side — say so instead.
 
 ## Non-negotiable rules
 
-<!-- TODO: the rules an agent can break without noticing, grouped by risk
-(cost, secrets, external systems). Each one cites the requirement it serves. -->
-
 ### Secrets
 
 - **Credentials live in `.env`, nowhere else** — never hardcoded, echoed,
   written into a fixture, or put in a commit message. No agent reads `.env`
-  directly.
+  directly ([R-ACCOUNT-3](docs/requirements.md#r-account-3)).
+- *Scope:* this binds the repo tree. At runtime the integration keeps its
+  refresh token in Home Assistant's config entry on the owner's Home Assistant;
+  that is not a breach.
 
 ### Live requests
 
-- **No request to Coop without a fresh ask** of the owner — not a capture, not a
-  `-m live` run, not a dev Home Assistant pointed at the real Coop. A yes covers
-  that one run. A step in a plan or an issue is not a yes.
-- **One Home Assistant holds the Coop login at a time.** A dev Home Assistant
-  logs in to the real Coop only while the owner's real one does not have the
-  integration running, and only after the owner says yes.
-- **The capture records only what the app does**: the app used normally, with no
-  replayed or stale token, no request crafted by hand and no error provoked on
-  purpose. A question that leaves open stays in `docs/api.md`'s **Unknowns**
-  ([`docs/reverse-engineering.md`](docs/reverse-engineering.md)).
+They serve [R-ACCOUNT-1](docs/requirements.md#r-account-1) and
+[R-ACCOUNT-2](docs/requirements.md#r-account-2). "Coop" here means every host
+the Coop app talks to, the remote configuration host included.
+
+- **No request to Coop without a fresh ask** of the owner. The routes to Coop
+  are a capture, a `-m live` run, and a dev Home Assistant pointed at the real
+  Coop. A yes covers that one run. A step in a plan or an issue is not a yes.
+- **One Coop session at a time.** Before a capture, a `-m live` run or a dev
+  Home Assistant on the real Coop, the integration on the owner's real Home
+  Assistant is stopped if it is running — on the owner's yes — and only one of
+  them runs at a time.
+- **The capture records only what the app does**: the app used normally, and
+  nothing more —
+  - no replayed or stale token;
+  - no request crafted by hand;
+  - no error provoked on purpose.
+
+  A question that leaves open stays in `docs/api.md`'s **Unknowns**. The rig is
+  [`docs/reverse-engineering.md`](docs/reverse-engineering.md).
 
 ### Docs describe behaviour
 
@@ -64,7 +73,8 @@ convenient side — say so instead.
   `docs/superpowers/` and `docs/research/`
   ([spec](docs/superpowers/specs/2026-10-20-coop-shopping-list-design.md#docs)).
   `tests/test_docs_name_no_code.py` enforces it over `docs/` and `README.md`;
-  `CLAUDE.md` and `.claude/` may name scripts.
+  `CLAUDE.md` and `.claude/` may name scripts
+  ([R-REPO-4](docs/requirements.md#r-repo-4)).
 
 ## How to work here
 
@@ -155,9 +165,6 @@ uv run python scripts/check_doc_links.py
 
 `uv run pytest -m live` runs the tests that reach the real Coop with the
 owner's credentials: a fresh ask first, every time (Live requests, above).
-
-<!-- TODO: language, tooling, and the gate commands. The static checks include
-`scripts/check_doc_links.py`. -->
 
 ## Status
 

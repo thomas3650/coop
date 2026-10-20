@@ -24,8 +24,8 @@ diff was *supposed* to do; this file is how you judge what it actually did.
 
 ## What you are looking for, in order
 
-1. **A change that raises the account-lock risk** — the failure that ranks above
-   every feature (`docs/requirements.md` R-ACCOUNT-1). A login Home Assistant
+1. **A change that raises the account-lock risk** — the failure `CLAUDE.md`
+   ("What this is") ranks first (`docs/requirements.md` R-ACCOUNT-1). A login Home Assistant
    repeats on its own, a refused refresh that does not stop it, a retry without
    back-off, a request the app does not make, a rotated refresh token used before
    it is stored, a second Home Assistant on the same login, a live request nobody
@@ -37,8 +37,10 @@ diff was *supposed* to do; this file is how you judge what it actually did.
    the leaf, or a payload in `docs/research/`. A neighbouring docstring, a trimmed
    fixture and a green suite are **not** evidence. If nothing backs it, the
    finding is: write the narrower true claim instead.
-4. **Secrets.** A credential outside `.env`, or one that reaches a log line, a
-   `repr`, an exception message or a fixture.
+4. **Secrets.** A credential outside `.env` in the repo tree, or one that reaches
+   a log line, a `repr`, an exception message or a fixture. At runtime the
+   refresh token lives in Home Assistant's config entry on the owner's Home
+   Assistant; that is not a breach.
 5. **Tests.** Was there a red test before the code (`git log -p` over the task's
    commits shows the order)? Does the test assert the invariant it claims to?
    - **Every safety guard needs a test that would fail without it.** Establish it

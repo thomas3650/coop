@@ -33,7 +33,7 @@ restated here.
 
 ## The account
 
-- <a id="r-account-1"></a>**R-ACCOUNT-1** As the owner, nothing this project builds or runs gives Coop a reason to lock my account, and that ranks above freshness and above every feature ([anti-goals](superpowers/specs/2026-10-20-coop-shopping-list-design.md#anti-goals)).
+- <a id="r-account-1"></a>**R-ACCOUNT-1** As the owner, nothing this project builds or runs gives Coop a reason to lock my account ([anti-goals](superpowers/specs/2026-10-20-coop-shopping-list-design.md#anti-goals)).
 - <a id="r-account-2"></a>**R-ACCOUNT-2** As the owner, one Home Assistant holds my Coop login at a time, so a dev Home Assistant and my real one never fight over it.
 - <a id="r-account-3"></a>**R-ACCOUNT-3** As the owner, no token, password, member number, name, address or list content ever reaches a commit, so the public repo carries nothing of mine.
 

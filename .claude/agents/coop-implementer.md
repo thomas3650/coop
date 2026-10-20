@@ -33,10 +33,10 @@ thing it names.
 |---|---|---|
 | A change that raises the account-lock risk: a login Home Assistant repeats on its own, a retry with no back-off, a request the app does not make, polling faster than the setting | Coop never has a reason to lock the owner's account | `docs/requirements.md` R-ACCOUNT-1; the spec's "Gentle by construction" |
 | A request to Coop — a capture, a `-m live` run, a dev Home Assistant on the real Coop — without a fresh ask | none without the owner's yes for that run | `CLAUDE.md`, Live requests |
-| Two Home Assistants holding the Coop login | one at a time | `CLAUDE.md`, Live requests; R-ACCOUNT-2 |
+| Two Coop sessions at once: the owner's real Home Assistant beside a dev Home Assistant, a capture or a `-m live` run | one at a time | `CLAUDE.md`, Live requests; R-ACCOUNT-2 |
 | A path to deleting an item or clearing Indkøbte varer, in the client or the integration | none exists | R-LIST-6; `docs/decisions.md` |
 | A rotated refresh token used before it is stored | stored first, then the next request | `docs/domain-language.md`, Refresh token |
-| A credential outside `.env`, or printed, logged or fixtured | — | `CLAUDE.md`, Secrets |
+| A credential outside `.env` in the repo tree, or printed, logged or fixtured. At runtime the refresh token lives in Home Assistant's config entry on the owner's Home Assistant; that is not a breach | — | `CLAUDE.md`, Secrets |
 | A token, member data or list content in a committed capture or fixture | scrubbed, then read by hand | `docs/api-standard.md`, Redaction; R-ACCOUNT-3 |
 | A test that reaches the real Coop without the `live` marker | the suite is offline | `CLAUDE.md`, Tests; `docs/domain-language.md`, Live guard |
 | A doc under `docs/` or `README.md` naming this repo's code | docs describe behaviour | `CLAUDE.md`, Docs describe behaviour |
@@ -84,17 +84,8 @@ Check your diff for each before you report.
 
 ## Verify before reporting done
 
-Run every gate (`CLAUDE.md` § Commands) and paste what each printed:
-
-```bash
-uv run pytest
-uv run ruff check
-uv run ruff format --check
-uv run mypy
-uv run python scripts/check_doc_links.py
-```
-
-The link check reads only tracked files: `git add` a new doc before you run it.
+Run every gate in [`CLAUDE.md` § Commands](../../CLAUDE.md#commands) and paste
+what each printed. The link check reads only tracked files: `git add` a new doc before you run it.
 
 Paste the real output. If something fails, say so with the output — never
 report green you did not see.
