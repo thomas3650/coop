@@ -36,11 +36,28 @@ def _env_path() -> Path:
     return Path(__file__).resolve().parents[1] / ".env"
 
 
-def load(*names: str) -> dict[str, str]:
-    """Return each named variable's value, from the environment or `.env`.
+def _parse(text: str) -> dict[str, str]:
+    """`KEY=value` lines, skipping blank and `#` lines. Strips a leading `export ` and
+    one pair of matching surrounding quotes from the value."""
+    parsed: dict[str, str] = {}
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key = key.strip().removeprefix("export ").strip()
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+            value = value[1:-1]
+        parsed[key] = value
+    return parsed
 
-    A value already in the environment wins over `.env`. Raises `RuntimeError` naming
-    the missing variables, never their values.
+
+def load(*names: str) -> dict[str, str]:
+    """Return each named variable's value, from the environment or else `.env`.
+
+    A value already in the environment wins over `.env`. Leaves `os.environ`
+    unchanged. Raises `RuntimeError` naming the missing variables, never their values.
     """
     if _pytest_is_running() and os.environ.get(_LIVE_GATE_ENV) != "1":
         raise RuntimeError(
@@ -48,13 +65,9 @@ def load(*names: str) -> dict[str, str]:
             "bare `pytest` run would risk a real Coop request"
         )
     env_file = _env_path()
-    if env_file.exists():
-        for raw in env_file.read_text().splitlines():
-            line = raw.strip()
-            if line and not line.startswith("#") and "=" in line:
-                key, _, value = line.partition("=")
-                os.environ.setdefault(key.strip(), value.strip())
-    missing = [name for name in names if not os.environ.get(name)]
+    from_file = _parse(env_file.read_text()) if env_file.exists() else {}
+    loaded = {name: os.environ.get(name) or from_file.get(name, "") for name in names}
+    missing = [name for name, value in loaded.items() if not value]
     if missing:
         raise RuntimeError(f"{', '.join(missing)} must be set in .env")
-    return {name: os.environ[name] for name in names}
+    return loaded

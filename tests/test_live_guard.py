@@ -22,6 +22,7 @@ exercise that gate with the real `credentials.py`.
 """
 
 import pathlib
+import textwrap
 
 import pytest
 
@@ -243,3 +244,135 @@ def test_indirect_fixture_marked_live_reads_the_pointed_env_file(
     result.assert_outcomes(passed=1)
     output = result.stdout.str() + result.stderr.str()
     assert "sentinel-token" not in output
+
+
+def test_unmarked_test_under_a_live_directory_fails_collection(
+    pytester: pytest.Pytester,
+) -> None:
+    """A directory named `live` puts `live` into every item's keywords without
+    marking it, and `-m "not live"` still selects it. Only a real `live` marker
+    may let a test reach the loader."""
+    pytester.makeconftest(_ROOT_CONFTEST.read_text())
+    pytester.makepyfile(credentials="")
+    pytester.mkdir("live")
+    (pytester.path / "live" / "test_x.py").write_text(
+        "import credentials\n\n\ndef test_it():\n    pass\n"
+    )
+
+    result = _run(pytester)
+
+    assert result.ret != 0
+    result.stderr.fnmatch_lines(["*can reach the owner's Coop credentials*"])
+
+
+def _run_load(
+    pytester: pytest.Pytester, tmp_path: pathlib.Path, env_text: str, body: str
+) -> pytest.RunResult:
+    """Run `body` as a `live` test in a pytester project whose `credentials.py` is the
+    real one, pointed at a throwaway `.env` holding `env_text`."""
+    env_file = tmp_path / "fake.env"
+    env_file.write_text(env_text)
+    pytester.makeconftest(_ROOT_CONFTEST.read_text())
+    pytester.makepyfile(credentials=_CREDENTIALS_PATH.read_text())
+    header = (
+        "import os\n\nimport pytest\n\nimport credentials\n\n"
+        f"os.environ['_COOP_CREDENTIALS_ENV_FILE'] = {str(env_file)!r}\n\n\n"
+        "@pytest.mark.live\ndef test_it():\n"
+    )
+    (pytester.path / "test_load.py").write_text(
+        header + textwrap.indent(textwrap.dedent(body).strip("\n"), "    ") + "\n"
+    )
+    return _run(pytester, "-m", "live")
+
+
+@pytest.fixture
+def _clean_sentinels(monkeypatch: pytest.MonkeyPatch) -> None:
+    for name in ("COOP_SENTINEL_A", "COOP_SENTINEL_B", "COOP_SENTINEL_C", "COOP_SENTINEL_D"):
+        monkeypatch.delenv(name, raising=False)
+
+
+@pytest.mark.usefixtures("_clean_sentinels")
+def test_load_leaves_the_environment_untouched(
+    pytester: pytest.Pytester, tmp_path: pathlib.Path
+) -> None:
+    result = _run_load(
+        pytester,
+        tmp_path,
+        "COOP_SENTINEL_A=a-value\nCOOP_SENTINEL_B=b-value\n",
+        """
+        returned = credentials.load("COOP_SENTINEL_A") == {"COOP_SENTINEL_A": "a-value"}
+        requested_exported = "COOP_SENTINEL_A" in os.environ
+        unrequested_exported = "COOP_SENTINEL_B" in os.environ
+        assert returned, "requested value not returned"
+        assert not requested_exported, "requested key exported"
+        assert not unrequested_exported, "unrequested key exported"
+        """,
+    )
+
+    result.assert_outcomes(passed=1)
+
+
+@pytest.mark.usefixtures("_clean_sentinels")
+def test_load_prefers_the_environment_over_the_env_file(
+    pytester: pytest.Pytester, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("COOP_SENTINEL_A", "from-environment")
+    result = _run_load(
+        pytester,
+        tmp_path,
+        "COOP_SENTINEL_A=from-file\n",
+        """
+        matches = credentials.load("COOP_SENTINEL_A") == {"COOP_SENTINEL_A": "from-environment"}
+        assert matches, "the environment did not win over .env"
+        """,
+    )
+
+    result.assert_outcomes(passed=1)
+
+
+@pytest.mark.usefixtures("_clean_sentinels")
+def test_load_parses_quotes_export_and_comments(
+    pytester: pytest.Pytester, tmp_path: pathlib.Path
+) -> None:
+    result = _run_load(
+        pytester,
+        tmp_path,
+        "# COOP_SENTINEL_D=commented-out\n"
+        "\n"
+        'COOP_SENTINEL_A="double quoted"\n'
+        "COOP_SENTINEL_B='single quoted'\n"
+        "export COOP_SENTINEL_C=exported\n"
+        "COOP_SENTINEL_D=\"mismatched'\n",
+        """
+        loaded = credentials.load(
+            "COOP_SENTINEL_A", "COOP_SENTINEL_B", "COOP_SENTINEL_C", "COOP_SENTINEL_D"
+        )
+        double = loaded["COOP_SENTINEL_A"] == "double quoted"
+        single = loaded["COOP_SENTINEL_B"] == "single quoted"
+        exported = loaded["COOP_SENTINEL_C"] == "exported"
+        mismatched = loaded["COOP_SENTINEL_D"] == "\\"mismatched'"
+        assert double, "double quotes kept"
+        assert single, "single quotes kept"
+        assert exported, "export prefix not stripped"
+        assert mismatched, "mismatched quotes stripped"
+        """,
+    )
+
+    result.assert_outcomes(passed=1)
+
+
+@pytest.mark.usefixtures("_clean_sentinels")
+def test_load_ignores_a_commented_out_key(
+    pytester: pytest.Pytester, tmp_path: pathlib.Path
+) -> None:
+    result = _run_load(
+        pytester,
+        tmp_path,
+        "# COOP_SENTINEL_A=commented-out\n",
+        """
+        with pytest.raises(RuntimeError, match="COOP_SENTINEL_A must be set"):
+            credentials.load("COOP_SENTINEL_A")
+        """,
+    )
+
+    result.assert_outcomes(passed=1)

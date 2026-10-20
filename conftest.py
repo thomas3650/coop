@@ -70,7 +70,7 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
         item.nodeid
         for item in items
         if _reaches_the_credentials_loader(getattr(getattr(item, "module", None), "__dict__", {}))
-        and "live" not in item.keywords
+        and item.get_closest_marker("live") is None
     ]
     if offenders:
         raise pytest.UsageError(
