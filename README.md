@@ -56,6 +56,16 @@ uv run python scripts/build_zip.py /tmp/coop_dk.zip
 | The bump step | Fetches `main` from GitHub; edits the manifest's version and the changelog, and commits nothing. |
 | The zip build | Writes one zip file; no network request. |
 
+A recorded capture, as one file per request through [the scrubber](docs/domain-language.md#dl-scrubber):
+
+```bash
+uv run --group capture python scripts/export_flows.py <flows> <out_dir>
+```
+
+| Runnable | What it costs |
+|---|---|
+| The flow export | Reads one capture file and writes into the folder it is given; no network request. The output is still read by hand before anything from it is committed. |
+
 The dev Home Assistant at `http://localhost:8123`, with the integration linked from the working
 tree; its config folder is gitignored:
 

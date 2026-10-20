@@ -38,14 +38,18 @@ extend-exclude = ["docs", ".claude", ".superpowers"]
 [tool.mypy]
 python_version = "3.14"
 strict = true
-files = ["packages/coop-client/src", "custom_components", "scripts", "tests", "conftest.py"]
+files = ["packages/coop-client/src", "packages/coop-client/tests", "custom_components", "scripts", "tests", "conftest.py"]
 mypy_path = "scripts"
 explicit_package_bases = true
+
+[[tool.mypy.overrides]]
+module = ["mitmproxy", "mitmproxy.*"]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 addopts = ["-m", "not live", "--strict-markers"]
 asyncio_mode = "auto"
-testpaths = ["tests"]
+testpaths = ["tests", "packages/coop-client/tests"]
 pythonpath = ["tests", "scripts"]
 markers = [
     "live: reaches the real Coop API with the owner's credentials from .env. Excluded by default; run only with `-m live` and a fresh ask.",
