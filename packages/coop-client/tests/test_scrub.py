@@ -643,3 +643,46 @@ def test_masks_escaped_json_pairs_in_text() -> None:
 @pytest.mark.parametrize("key", ["kunde", "kundenr", "kundenummer", "kundeNavn"])
 def test_masks_danish_customer_keys(key: str) -> None:
     assert scrub_json({key: "k-s3cr3t"}) == {key: "<redacted>"}
+
+
+@pytest.mark.parametrize("attribute", ["value", "data-value", "data-original-value"])
+def test_masks_every_value_attribute_of_a_masked_input(attribute: str) -> None:
+    html = f'<input type="hidden" name="x" {attribute}="tok-s3cr3t">'
+    assert "tok-s3cr3t" not in scrub_text(html)
+
+
+def test_escaped_json_value_with_an_escaped_quote_inside() -> None:
+    text = 'payload={\\"password\\":\\"ab\\\\\\"cd\\",\\"keep\\":\\"ok\\"}'
+    out = scrub_text(text)
+    assert "cd" not in out
+    assert "ab" not in out
+    assert '\\"keep\\":\\"ok\\"' in out
+
+
+def test_masks_a_container_under_a_masked_key_in_escaped_json() -> None:
+    text = 'payload={\\"address\\":{\\"street\\":\\"Hidden } Way 1\\",\\"n\\":[1]},\\"keep\\":1}'
+    out = scrub_text(text)
+    assert "Hidden" not in out
+    assert "Way 1" not in out
+    assert out == 'payload={\\"address\\":\\"<redacted>\\",\\"keep\\":1}'
+
+
+@pytest.mark.parametrize(
+    ("value", "secret"), [(1234567.0, "1234567"), (1234567, "1234567.0"), (12.5, "12.5")]
+)
+def test_numeric_secret_matches_int_and_float_spellings(value: float, secret: str) -> None:
+    assert scrub_json({"x": value}, secrets=[secret]) == {"x": "<redacted>"}
+
+
+def test_escaped_container_scan_skips_escaped_inner_quotes() -> None:
+    # The inner JSON holds the string `a"} Hidden`, written `a\\\"} Hidden` once escaped.
+    text = 'p={\\"member\\":{\\"note\\":\\"a\\\\\\"} Hidden\\"},\\"keep\\":1}'
+    out = scrub_text(text)
+    assert "Hidden" not in out
+    assert out == 'p={\\"member\\":\\"<redacted>\\",\\"keep\\":1}'
+
+
+def test_escaped_container_scan_closes_after_an_escaped_backslash() -> None:
+    # The inner JSON holds the string `a\`, written `a\\\\` once escaped.
+    text = 'p={\\"member\\":{\\"note\\":\\"a\\\\\\\\\\"},\\"keep\\":1}'
+    assert scrub_text(text) == 'p={\\"member\\":\\"<redacted>\\",\\"keep\\":1}'

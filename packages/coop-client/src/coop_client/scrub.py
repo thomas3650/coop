@@ -177,12 +177,21 @@ def _attribute(name: str) -> re.Pattern[str]:
 
 _ATTR_NAME = _attribute("name")
 _ATTR_TYPE = _attribute("type")
-_ATTR_VALUE = _attribute("value")
+# Every attribute whose name ends in `value`: `value`, `data-value`,
+# `data-original-value`. Unlike `name` and `type`, no prefix is excluded.
+_ATTR_ANY_VALUE = re.compile(
+    r"(\b[\w-]*value\s*=\s*)(?:\"[^\"]*\"|'[^']*'|[^\s>\"']+)", re.IGNORECASE
+)
 # An input whose value is masked whatever its name.
 _MASKED_INPUT_TYPES = frozenset({"password", "hidden"})
+# `\"key\": value` in JSON that is itself inside a JSON string. The value is an
+# escaped string, which ends at the first `\"` that is not part of an escaped
+# backslash (`\\\\`) or an escaped inner quote (`\\\"`), or a bare scalar.
+_ESCAPED_JSON_PAIR = re.compile(
+    r'(\\")([^"\\]{1,100})\\"(\s*:\s*)'
+    r'(\\"(?:\\\\\\"|\\\\\\\\|\\[^"\\]|[^\\])*\\"|[^,}\]\s\\]+)'
+)
 # `"key": value` in JSON text: a string (escapes included) or a bare scalar.
-# `\"key\": value` in JSON that is itself inside a JSON string.
-_ESCAPED_JSON_PAIR = re.compile(r'(\\")([^"\\]{1,100})\\"(\s*:\s*)(\\".*?\\"|[^,}\]\s\\]+)')
 _JSON_PAIR = re.compile(
     r"([\"'])([^\"'\\]{1,100})\1(\s*:\s*)(\"(?:[^\"\\]|\\.)*\"|'(?:[^'\\]|\\.)*'|[^,}\]\s]+)"
 )
@@ -211,6 +220,7 @@ _PHONE = re.compile(
 )
 _PHONE_NUMBER = re.compile(r"(?:45)?\d{8}")
 _CONTAINER_KEY = re.compile(r"([\"'])([^\"'\\]{1,100})\1(\s*:\s*)(?=[{\[])")
+_ESCAPED_CONTAINER_KEY = re.compile(r'(\\")([^"\\]{1,100})\\"(\s*:\s*)(?=[{\[])')
 
 
 def _attribute_value(pattern: re.Pattern[str], tag: str) -> str | None:
@@ -229,7 +239,7 @@ def _mask_input_tag(match: re.Match[str]) -> str:
         mask = REDACTED
     if mask is None:
         return tag
-    return _ATTR_VALUE.sub(lambda m: f'{m.group(1)}"{mask}"', tag)
+    return _ATTR_ANY_VALUE.sub(lambda m: f'{m.group(1)}"{mask}"', tag)
 
 
 def _container_end(text: str, start: int) -> int:
@@ -258,20 +268,59 @@ def _container_end(text: str, start: int) -> int:
     return len(text)
 
 
-def _mask_keyed_containers(text: str) -> str:
-    """Mask an object or array under a masked key in JSON text, balanced to its end."""
+def _escaped_container_end(text: str, start: int) -> int:
+    """`_container_end` for JSON held inside a JSON string, where a string opens and
+    closes with `\\"`, and `\\\\\\"` and `\\\\\\\\` are escapes inside it."""
+    depth = 0
+    in_string = False
+    index = start
+    while index < len(text):
+        if in_string:
+            if text.startswith(('\\\\\\"', "\\\\\\\\"), index):
+                index += 4
+            elif text.startswith('\\"', index):
+                in_string = False
+                index += 2
+            else:
+                index += 1
+            continue
+        if text.startswith('\\"', index):
+            in_string = True
+            index += 2
+            continue
+        char = text[index]
+        if char in "{[":
+            depth += 1
+        elif char in "}]":
+            depth -= 1
+            if depth == 0:
+                return index + 1
+        index += 1
+    return len(text)
+
+
+def _mask_containers(
+    text: str, key: re.Pattern[str], end: Callable[[str, int], int], quote: str
+) -> str:
     out: list[str] = []
     position = 0
-    while (found := _CONTAINER_KEY.search(text, position)) is not None:
+    while (found := key.search(text, position)) is not None:
         mask = _mask_for(found.group(2))
         if mask is None:
             out.append(text[position : found.end()])
             position = found.end()
             continue
-        out.append(text[position : found.end()] + f'"{mask}"')
-        position = _container_end(text, found.end())
+        out.append(text[position : found.end()] + f"{quote}{mask}{quote}")
+        position = end(text, found.end())
     out.append(text[position:])
     return "".join(out)
+
+
+def _mask_keyed_containers(text: str) -> str:
+    """Mask an object or array under a masked key in JSON text, and in JSON held
+    inside a JSON string, balanced to its end."""
+    text = _mask_containers(text, _CONTAINER_KEY, _container_end, '"')
+    return _mask_containers(text, _ESCAPED_CONTAINER_KEY, _escaped_container_end, '\\"')
 
 
 def _mask_json_pair(match: re.Match[str]) -> str:
@@ -354,11 +403,19 @@ def _scrub_json(value: object, secrets: tuple[str, ...], context: str | None) ->
         return _scrub_string(value, secrets, context)
     if isinstance(value, int | float) and not isinstance(value, bool):
         # A known secret held as a number: a member number, say.
-        if str(value) in secrets:
+        if not _number_spellings(value).isdisjoint(secrets):
             return REDACTED
         if isinstance(value, int) and _PHONE_NUMBER.fullmatch(str(value)):
             return REDACTED
     return value
+
+
+def _number_spellings(value: float) -> set[str]:
+    """`value` as an int and as a float would be written: `1234567` and `1234567.0`."""
+    spellings = {str(value)}
+    if isinstance(value, int) or value.is_integer():
+        spellings |= {str(int(value)), str(float(value))}
+    return spellings
 
 
 def _scrub_string(value: str, secrets: tuple[str, ...], context: str | None) -> str:

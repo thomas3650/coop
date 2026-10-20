@@ -348,3 +348,21 @@ def test_refuses_a_non_empty_out_dir(tmp_path: Path) -> None:
     with pytest.raises(export_flows.OutDirNotEmptyError):
         export_flows.export([_flow()], tmp_path)
     assert _written(tmp_path) == ["old.json"]
+
+
+def test_main_refuses_an_out_dir_that_is_a_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    target = tmp_path / "out"
+    target.write_text("keep")
+    monkeypatch.setattr(export_flows, "_read_flows", lambda path: iter([_flow()]))
+    assert export_flows.main([str(tmp_path / "c.flows"), str(target)]) == 2
+    assert "not an empty directory" in capsys.readouterr().err
+    assert target.read_text() == "keep"
+
+
+def test_export_refuses_an_out_dir_that_is_a_file(tmp_path: Path) -> None:
+    target = tmp_path / "out"
+    target.write_text("keep")
+    with pytest.raises(export_flows.OutDirNotEmptyError):
+        export_flows.export([_flow()], target)

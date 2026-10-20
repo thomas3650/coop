@@ -48,7 +48,7 @@ class OutsideOutDirError(ValueError):
 
 
 class OutDirNotEmptyError(ValueError):
-    """The export's out_dir already holds files."""
+    """The export's out_dir is a file, or a folder that already holds files."""
 
 
 def _content_type(headers: list[tuple[str, str]]) -> str:
@@ -165,13 +165,16 @@ def write_record(out_dir: Path, name: str, record: object) -> Path:
 
 
 def _not_empty(out_dir: Path) -> bool:
-    return out_dir.exists() and any(out_dir.iterdir())
+    """True unless `out_dir` is missing or an empty folder."""
+    if not out_dir.exists():
+        return False
+    return not out_dir.is_dir() or any(out_dir.iterdir())
 
 
 def export(flows: Iterable[Any], out_dir: Path, secrets: Iterable[str] = ()) -> int:
     """Write each flow to `out_dir/NNNN.json`; return how many files were written.
 
-    Refuses an `out_dir` that already holds files. Each of `secrets` is masked in
+    Refuses an `out_dir` that is a file or already holds files. Each of `secrets` is masked in
     every spelling the scrubber knows. A flow that fails to export, and a stream
     that fails partway, each leave one `PLACEHOLDER` file. The exception's message
     is not kept: it can quote the flow.
@@ -221,7 +224,7 @@ def main(argv: list[str]) -> int:
     args = parser.parse_args(argv)
     # Before the prompts, so a refused export never asks for a secret.
     if _not_empty(args.out_dir):
-        print(f"refusing: {args.out_dir} is not empty", file=sys.stderr)
+        print(f"refusing: {args.out_dir} is not an empty directory", file=sys.stderr)
         return 2
     secrets = [
         getpass.getpass(f"Secret {number} to mask: ") for number in range(1, args.ask_secret + 1)
@@ -229,7 +232,7 @@ def main(argv: list[str]) -> int:
     try:
         count = export(_read_flows(args.flows), args.out_dir, secrets=secrets)
     except OutDirNotEmptyError:
-        print(f"refusing: {args.out_dir} is not empty", file=sys.stderr)
+        print(f"refusing: {args.out_dir} is not an empty directory", file=sys.stderr)
         return 2
     print(f"wrote {count} files to {args.out_dir}")
     return 0
