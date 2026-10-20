@@ -1,0 +1,50 @@
+[project]
+name = "coop"
+version = "0.0.0"
+description = "Dev environment for the Coop shopping list Home Assistant integration (not a package)."
+requires-python = ">=3.14.2"
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "ruff",
+    "mypy",
+    "pytest",
+    "pytest-asyncio",
+    "pytest-homeassistant-custom-component==0.13.373",
+    "actionlint-py",
+    "zizmor",
+    "coop-client",
+]
+capture = [
+    "mitmproxy",
+]
+
+[tool.uv]
+default-groups = ["dev"]
+
+[tool.uv.workspace]
+members = ["packages/coop-client"]
+
+[tool.uv.sources]
+coop-client = { workspace = true }
+
+[tool.ruff]
+target-version = "py314"
+line-length = 100
+extend-exclude = ["docs", ".claude", ".superpowers"]
+
+[tool.mypy]
+python_version = "3.14"
+strict = true
+files = ["packages/coop-client/src", "scripts", "tests", "conftest.py"]
+explicit_package_bases = true
+
+[tool.pytest.ini_options]
+addopts = ["-m", "not live", "--strict-markers"]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+pythonpath = ["tests"]
+markers = [
+    "live: reaches the real Coop API with the owner's credentials from .env. Excluded by default; run only with `-m live` and a fresh ask.",
+]

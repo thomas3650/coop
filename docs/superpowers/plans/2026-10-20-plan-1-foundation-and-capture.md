@@ -65,14 +65,14 @@ The fix leaves the existing commits as they are:
 2. Push it as `main`.
 3. The old local `main` stays, renamed `local-history`.
 
-- [ ] **Step 1:** Run:
+- [x] **Step 1:** Run:
   ```
   git branch -m main local-history
   git checkout --orphan main
   git commit
   git push -u origin main
   ```
-- [ ] **Step 2:** Check that `git log --format='%ae' origin/main | sort -u` prints only the noreply address.
+- [x] **Step 2:** Check that `git log --format='%ae' origin/main | sort -u` prints only the noreply address.
 
 ### Task 1: Workspace, tooling and the live guard
 
@@ -91,9 +91,9 @@ The fix leaves the existing commits as they are:
   - **pytest config.** `-m "not live"` is in `addopts`, with `--strict-markers`. The `live` marker is defined. `asyncio_mode = "auto"`. `testpaths = ["tests", "packages/coop-client/tests"]`.
   - **The live guard.** The root `conftest.py` fails collection if a test module that is not marked `live` imports `tests/credentials.py`, the same as nota's guard.
 
-- [ ] **Step 1: Write the failing test** `tests/test_repo_hygiene.py::test_gitignore_covers_private_paths`. It is parametrised over `.env`, `.captures/x.flows`, `config/configuration.yaml`, `base.apk`, `x.xapk` and `decompiled/x.java`, and asserts that `git check-ignore -q <path>` exits 0 for each.
-- [ ] **Step 2:** Run `uv run pytest tests/test_repo_hygiene.py -v`. Expected: FAIL on `.captures/x.flows`, `config/…`, `*.apk`, `*.xapk` and `decompiled/…`.
-- [ ] **Step 3:** Add `.captures/`, `/config/`, `*.apk`, `*.xapk` and `decompiled/` to `.gitignore`. Write the root `pyproject.toml`:
+- [x] **Step 1: Write the failing test** `tests/test_repo_hygiene.py::test_gitignore_covers_private_paths`. It is parametrised over `.env`, `.captures/x.flows`, `config/configuration.yaml`, `base.apk`, `x.xapk` and `decompiled/x.java`, and asserts that `git check-ignore -q <path>` exits 0 for each.
+- [x] **Step 2:** Run `uv run pytest tests/test_repo_hygiene.py -v`. Expected: FAIL on `.captures/x.flows`, `config/…`, `*.apk`, `*.xapk` and `decompiled/…`.
+- [x] **Step 3:** Add `.captures/`, `/config/`, `*.apk`, `*.xapk` and `decompiled/` to `.gitignore`. Write the root `pyproject.toml`:
   - a uv workspace with `packages/coop-client`;
   - a dev group with `ruff`, `mypy`, `pytest`, `pytest-asyncio`, `pytest-homeassistant-custom-component` (latest), `actionlint-py`, `zizmor` and `coop-client` (workspace);
   - a `capture` group with `mitmproxy`;
@@ -101,9 +101,9 @@ The fix leaves the existing commits as they are:
   - mypy strict over `packages/coop-client/src`, `custom_components` and `scripts`.
 
   Then `uv sync`.
-- [ ] **Step 4:** Run `uv run pytest -v`. Expected: PASS. Then run `uv run ruff check && uv run ruff format --check && uv run mypy`. Expected: clean.
-- [ ] **Step 5:** Port nota's live guard and its pytester test into `conftest.py` and `tests/test_live_guard.py`. See it go red with the guard removed, then restore it.
-- [ ] **Step 6:** Commit on branch `chore/workspace`. Open a PR titled `chore: uv workspace, tooling and the live guard`.
+- [x] **Step 4:** Run `uv run pytest -v`. Expected: PASS. Then run `uv run ruff check && uv run ruff format --check && uv run mypy`. Expected: clean.
+- [x] **Step 5:** Port nota's live guard and its pytester test into `conftest.py` and `tests/test_live_guard.py`. See it go red with the guard removed, then restore it.
+- [x] **Step 6:** Commit on branch `chore/workspace`. Open a PR titled `chore: uv workspace, tooling and the live guard`.
 
 ### Task 2: The docs-describe-behaviour test and the doc gates
 
