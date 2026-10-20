@@ -167,9 +167,9 @@ Invoke `writing-coop-docs` first. Content comes from the spec's [Docs](../specs/
 
 Pin every action by SHA with a version comment, as `HA-NortecGo` does, and set `permissions: contents: read` and `persist-credentials: false`. Copy the SHAs from `HA-NortecGo/.github/workflows/`.
 
-- [ ] **Step 1:** Write the workflows.
-- [ ] **Step 2:** Run `uv run actionlint && uv run zizmor --offline .github/workflows`. Expected: clean.
-- [ ] **Step 3:** Push the branch and open a PR titled `ci: lint, tests and gitleaks`. Expected: all three checks green on the PR (`gh pr checks`).
+- [x] **Step 1:** Write the workflows.
+- [x] **Step 2:** Run `uv run actionlint && uv run zizmor --offline .github/workflows`. Expected: clean.
+- [x] **Step 3:** Push the branch and open a PR titled `ci: lint, tests and gitleaks`. Expected: all three checks green on the PR (`gh pr checks`).
 - [ ] **Step 4:** After the merge, set branch protection on `main` with `gh api`: require a PR, require the `lint`, `tests` and `gitleaks` checks, no force pushes. Record the settings in the ledger.
 
 ### Task 5: Integration skeleton, HACS files and the release pipeline
