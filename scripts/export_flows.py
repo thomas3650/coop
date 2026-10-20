@@ -1,10 +1,15 @@
 """Export a mitmproxy capture as one scrubbed JSON file per flow.
 
-    uv run --no-project --with mitmproxy --with-editable ./packages/coop-client python scripts/export_flows.py <flows> <out_dir>
+    uv run --no-project --with mitmproxy --with-editable ./packages/coop-client python scripts/export_flows.py <flows> <out_dir> [--ask-secret ...]
 
 In an environment of its own, from the repo root: the project environment does not
 resolve a usable mitmproxy beside Home Assistant's pins. Editable, because uv caches
 a built `coop-client` under its unchanged version and would run a stale scrubber.
+
+Point both paths at the gitignored `.captures/`. The out_dir must be empty. Each
+`--ask-secret` prompts, without echo, for one value known to be secret (the
+password, say); it is masked in every spelling the scrubber knows and is not
+written anywhere.
 
 Each file holds the method, URL, status, and the request's and response's headers
 and body, all through the scrubber. A flow that cannot be read as an HTTP exchange
@@ -15,68 +20,123 @@ network request.
 The result is still read by hand before anything derived from it is committed.
 """
 
+import argparse
+import getpass
 import json
 import sys
 from collections.abc import Iterable, Iterator
 from pathlib import Path
 from typing import Any
 
-from coop_client.scrub import scrub_form, scrub_headers, scrub_json, scrub_text, scrub_url
+from coop_client.scrub import (
+    BINARY,
+    scrub_form,
+    scrub_headers,
+    scrub_json,
+    scrub_multipart,
+    scrub_text,
+    scrub_url,
+)
 
 PLACEHOLDER: dict[str, str] = {"unparsed": "<flow could not be exported>"}
-BINARY = "<binary>"
+_BOM = "\ufeff"
 
 
 class OutsideOutDirError(ValueError):
     """A record's path resolves outside the export's out_dir."""
 
 
+class OutDirNotEmptyError(ValueError):
+    """The export's out_dir already holds files."""
+
+
 def _content_type(headers: list[tuple[str, str]]) -> str:
     for name, value in headers:
         if name.lower() == "content-type":
-            return value.lower()
+            return value
     return ""
 
 
-def scrub_body(body: bytes | None, content_type: str) -> object:
-    """A body as scrubbed JSON, scrubbed form pairs, scrubbed text, or `BINARY`."""
-    if body is None:
+def _json_lines(text: str, secrets: tuple[str, ...]) -> list[object] | None:
+    """NDJSON scrubbed line by line, or None if a line is not JSON."""
+    lines = [line for line in text.splitlines() if line.strip()]
+    if len(lines) < 2:
         return None
     try:
-        text = body.decode("utf-8")
+        return [scrub_json(json.loads(line), secrets=secrets) for line in lines]
+    except ValueError:
+        return None
+
+
+def _event_stream(text: str, secrets: tuple[str, ...]) -> list[object]:
+    """Server-sent events line by line: a `data:` line holding JSON as scrubbed JSON,
+    every other line by `scrub_text`."""
+    out: list[object] = []
+    for line in text.splitlines():
+        if line.startswith("data:"):
+            try:
+                out.append(scrub_json(json.loads(line[5:]), secrets=secrets))
+                continue
+            except ValueError:
+                pass
+        out.append(scrub_text(line, secrets))
+    return out
+
+
+def scrub_body(body: bytes | None, content_type: str, secrets: Iterable[str] = ()) -> object:
+    """A body as scrubbed JSON, NDJSON or server-sent events, scrubbed form or
+    multipart pairs, scrubbed text, or `BINARY`."""
+    secrets = tuple(secrets)
+    if body is None:
+        return None
+    kind = content_type.lower()
+    if "multipart/" in kind:
+        try:
+            return scrub_multipart(body, content_type, secrets)
+        except ValueError:
+            return BINARY
+    try:
+        text = body.decode("utf-8").removeprefix(_BOM)
     except UnicodeDecodeError:
         return BINARY
-    if "application/x-www-form-urlencoded" in content_type:
-        return scrub_form(text)
+    if "application/x-www-form-urlencoded" in kind:
+        return scrub_form(text, secrets)
     try:
-        parsed = json.loads(text)
+        return scrub_json(json.loads(text), secrets=secrets)
     except ValueError:
-        return scrub_text(text)
-    return scrub_json(parsed)
+        pass
+    lines = _json_lines(text, secrets)
+    if lines is not None:
+        return lines
+    if "text/event-stream" in kind or any(line.startswith("data:") for line in text.splitlines()):
+        return _event_stream(text, secrets)
+    return scrub_text(text, secrets)
 
 
-def _message(message: Any) -> dict[str, object]:
+def _message(message: Any, secrets: tuple[str, ...]) -> dict[str, object]:
     headers = [(str(k), str(v)) for k, v in message.headers.items(multi=True)]
-    # Not strict: a body whose Content-Encoding fails to decode comes back as its
-    # raw bytes, which `scrub_body` then reports as `BINARY`.
+    # Not strict: mitmproxy then returns a body whose Content-Encoding fails to
+    # decode as its raw bytes instead of raising; `scrub_body` treats those like any
+    # other body, so bytes that are not UTF-8 become `BINARY`.
     body = message.get_content(strict=False)
     return {
-        "headers": scrub_headers(headers),
-        "body": scrub_body(body, _content_type(headers)),
+        "headers": scrub_headers(headers, secrets),
+        "body": scrub_body(body, _content_type(headers), secrets),
     }
 
 
-def record_from_flow(flow: Any) -> dict[str, object]:
+def record_from_flow(flow: Any, secrets: Iterable[str] = ()) -> dict[str, object]:
     """A scrubbed record of one mitmproxy `HTTPFlow`. Raises `AttributeError` for a
     flow of another kind, which `export` writes as `PLACEHOLDER`."""
+    secrets = tuple(secrets)
     request = flow.request
     response = getattr(flow, "response", None)
     return {
         "method": str(request.method),
-        "url": scrub_url(str(request.pretty_url)),
+        "url": scrub_url(str(request.pretty_url), secrets),
         "status": int(response.status_code) if response is not None else None,
-        "request": _message(request),
-        "response": _message(response) if response is not None else None,
+        "request": _message(request, secrets),
+        "response": _message(response, secrets) if response is not None else None,
     }
 
 
@@ -90,12 +150,17 @@ def write_record(out_dir: Path, name: str, record: object) -> Path:
     return target
 
 
-def export(flows: Iterable[Any], out_dir: Path) -> int:
+def export(flows: Iterable[Any], out_dir: Path, secrets: Iterable[str] = ()) -> int:
     """Write each flow to `out_dir/NNNN.json`; return how many files were written.
 
-    A flow that fails to export, and a stream that fails partway, each leave one
-    `PLACEHOLDER` file. The exception's message is not kept: it can quote the flow.
+    Refuses an `out_dir` that already holds files. Each of `secrets` is masked in
+    every spelling the scrubber knows. A flow that fails to export, and a stream
+    that fails partway, each leave one `PLACEHOLDER` file. The exception's message
+    is not kept: it can quote the flow.
     """
+    secrets = tuple(secrets)
+    if out_dir.exists() and any(out_dir.iterdir()):
+        raise OutDirNotEmptyError(str(out_dir))
     out_dir.mkdir(parents=True, exist_ok=True)
     index = 0
     iterator: Iterator[Any] = iter(flows)
@@ -109,7 +174,7 @@ def export(flows: Iterable[Any], out_dir: Path) -> int:
             index += 1
             break
         try:
-            record = record_from_flow(flow)
+            record = record_from_flow(flow, secrets)
         except Exception:  # noqa: BLE001 - any parse failure ends in a placeholder
             record = dict(PLACEHOLDER)
         write_record(out_dir, f"{index:04d}.json", record)
@@ -117,16 +182,34 @@ def export(flows: Iterable[Any], out_dir: Path) -> int:
     return index
 
 
-def main(argv: list[str]) -> int:
-    if len(argv) != 2:
-        print("usage: export_flows.py <flows> <out_dir>", file=sys.stderr)
-        return 2
+def _read_flows(path: Path) -> Iterator[Any]:
     # Imported here so the offline suite does not need mitmproxy.
     from mitmproxy.io import FlowReader
 
-    with Path(argv[0]).open("rb") as flows_file:
-        count = export(FlowReader(flows_file).stream(), Path(argv[1]))
-    print(f"wrote {count} files to {argv[1]}")
+    with path.open("rb") as flows_file:
+        yield from FlowReader(flows_file).stream()
+
+
+def main(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(description="Export a capture, scrubbed.")
+    parser.add_argument("flows", type=Path)
+    parser.add_argument("out_dir", type=Path)
+    parser.add_argument(
+        "--ask-secret",
+        action="count",
+        default=0,
+        help="prompt, without echo, for one known secret to mask; repeat for more",
+    )
+    args = parser.parse_args(argv)
+    secrets = [
+        getpass.getpass(f"Secret {number} to mask: ") for number in range(1, args.ask_secret + 1)
+    ]
+    try:
+        count = export(_read_flows(args.flows), args.out_dir, secrets=secrets)
+    except OutDirNotEmptyError:
+        print(f"refusing: {args.out_dir} is not empty", file=sys.stderr)
+        return 2
+    print(f"wrote {count} files to {args.out_dir}")
     return 0
 
 

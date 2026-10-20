@@ -8,7 +8,14 @@ import json
 from urllib.parse import quote, quote_plus
 
 import pytest
-from coop_client.scrub import scrub_form, scrub_headers, scrub_json, scrub_text, scrub_url
+from coop_client.scrub import (
+    scrub_form,
+    scrub_headers,
+    scrub_json,
+    scrub_multipart,
+    scrub_text,
+    scrub_url,
+)
 
 _JWT = "eyJ" + "hbGciOiJSUzI1NiJ9" + "." + "eyJ" + "zdWIiOiJ4In0" + "." + "c2lnbmF0dXJl" * 3
 _LONG = ("Ab9_" * 10) + "-x"
@@ -189,7 +196,6 @@ def test_masks_password_and_one_time_code_keys(key: str) -> None:
         "Set-Cookie",
         "client_secret",
         "session",
-        "sessionid",
         "session_state",
         "__RequestVerificationToken",
     ],
@@ -257,12 +263,12 @@ def test_masks_form_body_by_key() -> None:
 def test_masks_url_query_by_key() -> None:
     secret = "st@te/s3cr3t"
     url = (
-        f"https://login.example.test/connect/authorize?client_id=app&state={quote(secret, safe='')}"
+        f"https://login.example.test/connect/authorize?scope=openid&state={quote(secret, safe='')}"
     )
     out = scrub_url(url)
     _assert_absent(out, secret)
     assert out.startswith("https://login.example.test/connect/authorize?")
-    assert "client_id=app" in out
+    assert "scope=openid" in out
     assert "state=" in out
 
 
@@ -294,13 +300,11 @@ def test_masks_form_post_hidden_inputs_in_html() -> None:
         '<input type="hidden" name="code" value="c0de-s3cr3t" />'
         "<input type='hidden' name='id_token' value='idt-s3cr3t'/>"
         '<input type="hidden" value="ss-s3cr3t" name="session_state" />'
-        '<input type="hidden" name="scope" value="openid" />'
         "</form>"
     )
     out = scrub_text(html)
     for secret in ["c0de-s3cr3t", "idt-s3cr3t", "ss-s3cr3t"]:
         assert secret not in out
-    assert 'value="openid"' in out
 
 
 def test_masks_keyed_values_in_json_text_and_form_text() -> None:
@@ -320,12 +324,12 @@ def test_masks_uuid() -> None:
 def test_masks_keyed_values_inside_a_percent_encoded_return_url() -> None:
     url = (
         "https://login.example.test/Account/Login?ReturnUrl=%2Fconnect%2Fauthorize"
-        "%3Fclient_id%3Dapp%26code_challenge%3Dcc-s3cr3t%26state%3Dst-s3cr3t"
+        "%3Fresponse_type%3Dcode%26code_challenge%3Dcc-s3cr3t%26state%3Dst-s3cr3t"
         "%26nonce%253Dnn-s3cr3t%26scope%3Dopenid"
     )
     out = scrub_text(url)
     assert "s3cr3t" not in out
-    assert "client_id%3Dapp" in out
+    assert "response_type%3Dcode" in out
     assert "scope%3Dopenid" in out
 
 
@@ -349,7 +353,6 @@ def test_code_challenge_method_stays_visible() -> None:
         "Input.Email",
         "phone_number",
         "homeAddress",
-        "memberId",
         "member",
     ],
 )
@@ -370,3 +373,238 @@ def test_masks_numeric_path_segments_as_ids() -> None:
 def test_masks_numeric_path_segments_in_location_header() -> None:
     out = scrub_headers([("Location", "/lists/4711/items/12")])
     assert out == [["Location", "/lists/<id>/items/<id>"]]
+
+
+# Fix round 1: wider key set, more shapes, more carriers.
+
+
+@pytest.mark.parametrize(
+    "key",
+    [
+        "apikey",
+        "api_key",
+        "api_key_header",
+        "apiKey",
+        "clientKey",
+        "x-api-key",
+        "apimKey",
+        "publicKeys",
+        "key",
+        "X-Unleash-Signature",
+        "signatureValue",
+        "csrfToken",
+    ],
+)
+def test_masks_api_key_signature_and_token_keys(key: str) -> None:
+    secret = "k-s3cr3t"
+    assert scrub_json({key: secret}) == {key: "<redacted>"}
+    assert scrub_headers([(key, secret)]) == [[key, "<redacted>"]]
+
+
+def test_key_inside_a_word_is_not_a_key_suffix() -> None:
+    assert scrub_json({"keyboard": "visible"}) == {"keyboard": "visible"}
+
+
+@pytest.mark.parametrize(
+    "key",
+    [
+        "shoppingListId",
+        "listItemId",
+        "list_item_id",
+        "userId",
+        "customerId",
+        "contactId",
+        "customer_ids",
+        "sessionId",
+        "sessionid",
+        "memberId",
+        "productIds",
+    ],
+)
+def test_keys_ending_in_id_or_ids_become_id(key: str) -> None:
+    out = scrub_json({key: 12345})
+    assert out == {key: "<id>"}
+    assert scrub_form(f"{key}=12345") == [[key, "<id>"]]
+
+
+@pytest.mark.parametrize(
+    "key",
+    [
+        "customerNumber",
+        "contact_no",
+        "userNumber",
+        "customer_ids.registered",
+        "customer_ids[cookie]",
+        "remoteAddress",
+        "sub",
+    ],
+)
+def test_masks_member_identifier_keys(key: str) -> None:
+    out = scrub_json({key: "m-s3cr3t"})
+    assert "m-s3cr3t" not in json.dumps(out)
+    assert out[key] in {"<redacted>", "<id>"}  # type: ignore[index]
+
+
+def test_unleash_context_query_is_masked() -> None:
+    url = (
+        "https://unleash.example.test/api/frontend?appName=coop&userId=u-s3cr3t"
+        "&sessionId=s-s3cr3t&remoteAddress=10.1.2.3&properties%5BcustomerNumber%5D=c-s3cr3t"
+    )
+    out = scrub_url(url)
+    for secret in ["u-s3cr3t", "s-s3cr3t", "10.1.2.3", "c-s3cr3t"]:
+        assert secret not in out
+
+
+@pytest.mark.parametrize(
+    "key",
+    [
+        "navn",
+        "Fornavn",
+        "efternavn",
+        "adresse",
+        "vej",
+        "vejnavn",
+        "postnr",
+        "by",
+        "postnrBy",
+        "post_by",
+        "telefon",
+        "tlf",
+        "mobilNummer",
+        "medlemsnummer",
+        "medlem",
+        "kodeord",
+        "nytAdgangskode",
+        "fødselsdato",
+        "foedselsdato",
+        "CPR",
+        "cprNr",
+    ],
+)
+def test_masks_danish_personal_data_keys(key: str) -> None:
+    assert scrub_json({key: "d-s3cr3t"}) == {key: "<redacted>"}
+
+
+def test_by_inside_a_word_is_not_the_danish_city_key() -> None:
+    assert scrub_json({"sortBy": "x", "standby": "y"}) == {"sortBy": "<redacted>", "standby": "y"}
+
+
+@pytest.mark.parametrize(
+    "key",
+    ["cookies", "Proxy-Authorization", "X-Authorization", "oauth_state", "oidc_nonce"],
+)
+def test_masks_cookie_authorization_state_and_nonce_variants(key: str) -> None:
+    assert scrub_headers([(key, "v-s3cr3t")]) == [[key, "<redacted>"]]
+
+
+def test_masks_a_container_under_a_secret_key_in_json_text() -> None:
+    text = '{"address": {"street": "Hidden Way 1", "zip": [1, {"x": "y"}]}, "keep": "ok"}'
+    out = scrub_text(text)
+    assert "Hidden" not in out
+    assert '"keep": "ok"' in out
+    assert out == '{"address": "<redacted>", "keep": "ok"}'
+
+
+def test_masks_a_container_with_brackets_inside_strings() -> None:
+    text = '{"member": {"note": "a } tricky ] value", "n": "Hidden"}, "keep": 1}'
+    out = scrub_text(text)
+    assert "Hidden" not in out
+    assert "tricky" not in out
+    assert out == '{"member": "<redacted>", "keep": 1}'
+
+
+def test_recurses_into_stringified_json() -> None:
+    inner = json.dumps({"items": [{"name": "Oat milk"}], "listId": 4711})
+    out = scrub_json({"payload": inner})
+    assert isinstance(out, dict)
+    assert json.loads(out["payload"]) == {"items": [{"name": "<item>"}], "listId": "<id>"}
+
+
+@pytest.mark.parametrize("number", [12345678, 4512345678])
+def test_masks_phone_shaped_integers_under_any_key(number: int) -> None:
+    assert scrub_json({"count": number}) == {"count": "<redacted>"}
+
+
+def test_other_integers_survive_under_unknown_keys() -> None:
+    assert scrub_json({"count": 3, "ts": 1729425600}) == {"count": 3, "ts": 1729425600}
+
+
+@pytest.mark.parametrize("number", [3, 1729425600])
+def test_masks_any_number_under_a_personal_key(number: int) -> None:
+    assert scrub_json({"memberNumber": number}) == {"memberNumber": "<redacted>"}
+
+
+def test_masks_hex_runs_of_32_or_more() -> None:
+    hex_run = "0123456789abcdef" * 2
+    out = scrub_text(f"key {hex_run} end")
+    assert out == "key <token> end"
+
+
+def test_masks_base64url_runs_of_32_or_more() -> None:
+    run = "Ab9_" * 8
+    assert scrub_text(f"x {run} y") == "x <token> y"
+
+
+def test_masks_apim_key_in_json_and_x_api_key_header() -> None:
+    hex_run = "fedcba9876543210" * 2
+    assert scrub_json({"apimKey": hex_run}) == {"apimKey": "<redacted>"}
+    assert scrub_headers([("x-api-key", hex_run)]) == [["x-api-key", "<redacted>"]]
+    assert hex_run not in scrub_text(f"config apim={hex_run};")
+
+
+@pytest.mark.parametrize("phone", ["4512345678", "12-34-56-78", "12 34 56 78", "+45 1234 5678"])
+def test_masks_more_danish_phone_shapes(phone: str) -> None:
+    out = scrub_text(f"tel {phone} end")
+    assert out == "tel <redacted> end"
+
+
+@pytest.mark.parametrize("sep", ["%23", "%2F", "%3B", "%2523", "%252F", "%253B"])
+def test_masks_keyed_values_after_encoded_separators(sep: str) -> None:
+    out = scrub_text(f"https://x.test/cb?r=%2Fa{sep}code%3Dc0de-s3cr3t%26k%3D1")
+    assert "c0de-s3cr3t" not in out
+
+
+def test_masks_unquoted_input_values() -> None:
+    html = "<input type=text name=Input.Password value=pw-s3cr3t>"
+    assert "pw-s3cr3t" not in scrub_text(html)
+
+
+@pytest.mark.parametrize("input_type", ["password", "hidden", "PASSWORD"])
+def test_masks_value_of_password_and_hidden_inputs_whatever_the_name(input_type: str) -> None:
+    html = f'<input type="{input_type}" name="harmless" value="v-s3cr3t" />'
+    out = scrub_text(html)
+    assert "v-s3cr3t" not in out
+    html_unquoted = f"<input type={input_type} name=harmless value=v-s3cr3t>"
+    assert "v-s3cr3t" not in scrub_text(html_unquoted)
+
+
+def test_visible_input_with_harmless_name_keeps_its_value() -> None:
+    html = '<input type="text" name="scope" value="openid" />'
+    assert scrub_text(html) == html
+
+
+def test_masks_multipart_parts_by_name() -> None:
+    boundary = "XyZb0undary"
+    body = (
+        f"--{boundary}\r\n"
+        'Content-Disposition: form-data; name="Input.Password"\r\n\r\n'
+        "pw-s3cr3t\r\n"
+        f"--{boundary}\r\n"
+        'Content-Disposition: form-data; name="scope"\r\n\r\n'
+        "openid\r\n"
+        f"--{boundary}--\r\n"
+    ).encode()
+    out = scrub_multipart(body, f"multipart/form-data; boundary={boundary}")
+    assert out == [["Input.Password", "<redacted>"], ["scope", "openid"]]
+
+
+def test_multipart_without_a_boundary_raises() -> None:
+    with pytest.raises(ValueError, match="boundary"):
+        scrub_multipart(b"garbage", "multipart/form-data")
+
+
+def test_brackets_in_a_key_do_not_hide_its_suffix() -> None:
+    assert scrub_form("listIds[]=4711&listIds%5B%5D=4712") == [
+        ["listIds[]", "<id>"],
+        ["listIds[]", "<id>"],
+    ]

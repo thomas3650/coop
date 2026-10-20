@@ -4,9 +4,11 @@
 
 Builds flows with mitmproxy's test helpers, with secrets planted where a login puts
 them: a bearer JWT, a form-posted password, an `idsrv` session cookie, and a refresh
-token in a JSON response. Writes them with mitmproxy's `FlowWriter` into a temporary
+token in JSON responses compressed with gzip, br and zstd (those this mitmproxy can
+write), plus a body whose Content-Encoding does not decode. Writes them with mitmproxy's `FlowWriter` into a temporary
 folder, runs the export on that file, and fails if a planted value appears in any
-exported file. Makes no network request. Not part of the offline suite, which does
+exported file, if a compressed body is not exported as scrubbed JSON, or if the
+undecodable body is not exported as `<binary>`. Makes no network request. Not part of the offline suite, which does
 not have mitmproxy.
 """
 
@@ -44,35 +46,88 @@ def main() -> int:
     api = tflow.tflow(resp=True)
     api.request.url = "https://api.example.test/lists/4711"
     api.request.headers["Authorization"] = f"Bearer {planted['jwt']}"
-    api.response.headers["Content-Type"] = "application/json"
-    api.response.content = json.dumps(
-        {"refresh_token": planted["refresh_token"], "token_type": "Bearer"}
-    ).encode()
 
+    # One response per Content-Encoding mitmproxy can write here. Setting `content`
+    # after the header makes mitmproxy compress the body, so the capture holds the
+    # encoded bytes and the export has to decode them.
+    encoded = []
+    for encoding in _encodings():
+        flow = tflow.tflow(resp=True)
+        flow.request.url = f"https://api.example.test/token?enc={encoding}"
+        flow.response.headers["Content-Type"] = "application/json"
+        flow.response.headers["Content-Encoding"] = encoding
+        flow.response.content = json.dumps(
+            {"refresh_token": planted["refresh_token"], "token_type": "Bearer"}
+        ).encode()
+        assert flow.response.raw_content != flow.response.content, encoding
+        encoded.append((encoding, flow))
+
+    # A body whose Content-Encoding is a lie: `get_content(strict=False)` hands back
+    # the raw bytes, which are not UTF-8, so the export writes `<binary>`.
+    broken = tflow.tflow(resp=True)
+    broken.response.headers["Content-Encoding"] = "gzip"
+    broken.response.raw_content = b"\xff\xfe not gzip " + planted["refresh_token"].encode()
+
+    flows = [login, api, *(flow for _, flow in encoded), broken]
     with tempfile.TemporaryDirectory() as tmp:
         flows_path = Path(tmp) / "capture.flows"
         with flows_path.open("wb") as flows_file:
             writer = FlowWriter(flows_file)
-            writer.add(login)
-            writer.add(api)
+            for flow in flows:
+                writer.add(flow)
         out_dir = Path(tmp) / "out"
         export_flows.main([str(flows_path), str(out_dir)])
 
         exported = sorted(out_dir.iterdir())
-        leaks = [
-            f"{path.name}: {label}"
-            for path in exported
-            for label, value in planted.items()
-            if value in path.read_text(encoding="utf-8")
-        ]
-        for path in exported:
-            print(f"--- {path.name}")
-            print(path.read_text(encoding="utf-8"))
-    if len(exported) != 2 or leaks:
-        print(f"FAIL: {len(exported)} files, leaks: {leaks}", file=sys.stderr)
+        texts = {path.name: path.read_text(encoding="utf-8") for path in exported}
+        for name, text in texts.items():
+            print(f"--- {name}")
+            print(text)
+    problems = [
+        f"{name}: {label} leaked"
+        for name, text in texts.items()
+        for label, value in planted.items()
+        if value in text
+    ]
+    if len(texts) != len(flows):
+        problems.append(f"{len(texts)} files for {len(flows)} flows")
+    for index, (encoding, _) in enumerate(encoded, start=2):
+        body = _response_body(texts[f"{index:04d}.json"])
+        if body != {"refresh_token": "<redacted>", "token_type": "Bearer"}:
+            problems.append(f"{encoding} body exported as {body!r}")
+    broken_body = _response_body(texts[f"{len(flows) - 1:04d}.json"])
+    if broken_body != "<binary>":
+        problems.append(f"undecodable body exported as {broken_body!r}")
+    if problems:
+        print(f"FAIL: {problems}", file=sys.stderr)
         return 1
-    print(f"OK: none of {sorted(planted)} appears in the {len(exported)} exported files")
+    encodings = [encoding for encoding, _ in encoded]
+    print(
+        f"OK: {len(flows)} flows; none of {sorted(planted)} appears; "
+        f"{encodings} bodies exported as scrubbed JSON; the undecodable body as <binary>"
+    )
     return 0
+
+
+def _response_body(text: str) -> object:
+    """The exported response body, or the whole record if it has none (a placeholder)."""
+    record = json.loads(text)
+    response = record.get("response") if isinstance(record, dict) else None
+    return response.get("body") if isinstance(response, dict) else record
+
+
+def _encodings() -> list[str]:
+    """gzip, br and zstd, those of them this mitmproxy can encode."""
+    from mitmproxy.net import encoding
+
+    usable = []
+    for name in ["gzip", "br", "zstd"]:
+        try:
+            encoding.encode(b"x", name)
+        except ValueError:
+            continue
+        usable.append(name)
+    return usable
 
 
 if __name__ == "__main__":

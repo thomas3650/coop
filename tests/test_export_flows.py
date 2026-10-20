@@ -4,12 +4,14 @@ The flows are stand-ins with the attributes the export reads from a mitmproxy
 `HTTPFlow`, so the suite does not need mitmproxy.
 """
 
+import getpass
 import gzip
 import json
 from collections.abc import Iterator
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
+from urllib.parse import quote
 
 import export_flows
 import pytest
@@ -22,7 +24,13 @@ class _Headers:
         self._pairs = pairs
 
     def items(self, multi: bool = False) -> Iterator[tuple[str, str]]:
-        return iter(self._pairs)
+        """Like mitmproxy's `Headers.items`: without `multi`, one pair per name."""
+        if multi:
+            return iter(self._pairs)
+        seen: dict[str, tuple[str, str]] = {}
+        for name, value in self._pairs:
+            seen.setdefault(name.lower(), (name, value))
+        return iter(seen.values())
 
 
 class _Message:
@@ -69,7 +77,7 @@ def test_writes_one_scrubbed_file_per_flow(tmp_path: Path) -> None:
             ("Content-Type", "application/x-www-form-urlencoded"),
             ("Ocp-Apim-Subscription-Key", "sub-s3cr3t"),
         ],
-        request_body=b"grant_type=refresh_token&refresh_token=rt-s3cr3t&client_id=app",
+        request_body=b"grant_type=refresh_token&refresh_token=rt-s3cr3t&scope=openid",
         response_headers=[("Content-Type", "application/json")],
         response_body=json.dumps(
             {"access_token": _JWT, "refresh_token": "rt2-s3cr3t", "token_type": "Bearer"}
@@ -92,7 +100,7 @@ def test_writes_one_scrubbed_file_per_flow(tmp_path: Path) -> None:
     assert record["request"]["body"] == [
         ["grant_type", "refresh_token"],
         ["refresh_token", "<redacted>"],
-        ["client_id", "app"],
+        ["scope", "openid"],
     ]
     assert record["response"]["body"] == {
         "access_token": "<redacted>",
@@ -186,3 +194,110 @@ def test_refuses_to_write_through_a_symlink_out_of_out_dir(tmp_path: Path) -> No
     with pytest.raises(export_flows.OutsideOutDirError):
         export_flows.write_record(out_dir, "link/x.json", {})
     assert list(elsewhere.iterdir()) == []
+
+
+def _response_body(tmp_path: Path, body: bytes, content_type: str = "text/plain") -> object:
+    flow = _flow(response_headers=[("Content-Type", content_type)], response_body=body)
+    export_flows.export([flow], tmp_path)
+    record = json.loads((tmp_path / "0000.json").read_text())
+    return record["response"]["body"]
+
+
+def test_repeated_headers_are_all_exported(tmp_path: Path) -> None:
+    flow = _flow(
+        response_headers=[
+            ("Set-Cookie", "a=1"),
+            ("Set-Cookie", "idsrv.session=c-s3cr3t"),
+        ]
+    )
+    export_flows.export([flow], tmp_path)
+    record = json.loads((tmp_path / "0000.json").read_text())
+    assert record["response"]["headers"] == [["Set-Cookie", "<redacted>"]] * 2
+
+
+def test_json_body_with_a_bom(tmp_path: Path) -> None:
+    body = "\ufeff".encode() + b'{"refresh_token": "rt-s3cr3t"}'
+    assert _response_body(tmp_path, body) == {"refresh_token": "<redacted>"}
+
+
+def test_ndjson_body_scrubbed_line_by_line(tmp_path: Path) -> None:
+    body = b'{"refresh_token": "rt-s3cr3t"}\n{"listId": 4711}\n'
+    assert _response_body(tmp_path, body, "application/x-ndjson") == [
+        {"refresh_token": "<redacted>"},
+        {"listId": "<id>"},
+    ]
+
+
+def test_sse_data_lines_scrubbed_as_json(tmp_path: Path) -> None:
+    body = b'event: update\ndata: {"refresh_token": "rt-s3cr3t"}\n\ndata: plain c0de=1\n'
+    out = _response_body(tmp_path, body, "text/event-stream")
+    assert out == [
+        "event: update",
+        {"refresh_token": "<redacted>"},
+        "",
+        "data: plain c0de=1",
+    ]
+    assert "rt-s3cr3t" not in json.dumps(out)
+
+
+def test_multipart_body_scrubbed_by_part_name(tmp_path: Path) -> None:
+    boundary = "XyZb0undary"
+    body = (
+        f"--{boundary}\r\n"
+        'Content-Disposition: form-data; name="Input.Password"\r\n\r\n'
+        "pw-s3cr3t\r\n"
+        f"--{boundary}--\r\n"
+    ).encode()
+    out = _response_body(tmp_path, body, f"multipart/form-data; boundary={boundary}")
+    assert out == [["Input.Password", "<redacted>"]]
+
+
+def test_unparseable_multipart_becomes_binary(tmp_path: Path) -> None:
+    body = b"Input.Password=pw-s3cr3t"
+    assert _response_body(tmp_path, body, "multipart/form-data") == "<binary>"
+
+
+def test_known_secrets_are_masked_in_every_spelling(tmp_path: Path) -> None:
+    secret = 'pa"ss w@rd/1'
+    flow = _flow(
+        url=f"https://x.test/a?q={quote(secret, safe='')}",
+        response_body=json.dumps({"note": secret}).encode(),
+        response_headers=[("X-Echo", secret)],
+    )
+    export_flows.export([flow], tmp_path, secrets=[secret])
+    raw = (tmp_path / "0000.json").read_text()
+    for spelling in [secret, quote(secret, safe=""), json.dumps(secret)[1:-1]]:
+        assert spelling not in raw
+
+
+def test_main_asks_for_each_secret_without_writing_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    asked: list[str] = []
+    answers = iter(["first-s3cr3t", "second-s3cr3t"])
+
+    def fake_getpass(prompt: str = "") -> str:
+        asked.append(prompt)
+        return next(answers)
+
+    received: list[list[str]] = []
+
+    def fake_export(flows: object, out_dir: Path, secrets: list[str]) -> int:
+        received.append(list(secrets))
+        return 0
+
+    monkeypatch.setattr(getpass, "getpass", fake_getpass)
+    monkeypatch.setattr(export_flows, "export", fake_export)
+    monkeypatch.setattr(export_flows, "_read_flows", lambda path: iter(()))
+    argv = [str(tmp_path / "c.flows"), str(tmp_path / "out"), "--ask-secret", "--ask-secret"]
+    assert export_flows.main(argv) == 0
+    assert len(asked) == 2
+    assert received == [["first-s3cr3t", "second-s3cr3t"]]
+    assert all("s3cr3t" not in prompt for prompt in asked)
+
+
+def test_refuses_a_non_empty_out_dir(tmp_path: Path) -> None:
+    (tmp_path / "old.json").write_text("{}")
+    with pytest.raises(export_flows.OutDirNotEmptyError):
+        export_flows.export([_flow()], tmp_path)
+    assert _written(tmp_path) == ["old.json"]
