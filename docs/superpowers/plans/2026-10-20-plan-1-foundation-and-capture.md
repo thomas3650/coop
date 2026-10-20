@@ -235,7 +235,7 @@ Pin every action by SHA with a version comment, as `HA-NortecGo` does, and set `
   - `scrub_json(value: object) -> object`, which masks by key, recursively.
   - `uv run --group capture python scripts/export_flows.py <flows> <out_dir>`: writes one scrubbed JSON file per flow, holding method, URL, request headers and body, status, and response headers and body.
 
-- [ ] **Step 1: Write the failing tests**, one per rule, each asserting the original value is absent from the output:
+- [x] **Step 1: Write the failing tests**, one per rule, each asserting the original value is absent from the output:
   - `test_masks_by_key`: these keys become `<redacted>`:
     - `access_token`, `refresh_token`, `id_token`, `code`, `code_verifier`, `code_challenge`, `state`, `nonce`;
     - `Authorization`, `Ocp-Apim-Subscription-Key`, `subscriptionKey`, `app_installation_id`;
@@ -245,10 +245,10 @@ Pin every action by SHA with a version comment, as `HA-NortecGo` does, and set `
   - `test_masks_known_secret_anywhere`: a value passed in `secrets` is masked inside a URL query.
   - `test_unknown_long_token_is_masked`: a 40-character base64url run becomes `<token>`.
   - `test_list_and_item_ids_masked`: integer `id` and `listId` become `<id>`.
-- [ ] **Step 2:** Run `uv run pytest packages/coop-client/tests/test_scrub.py -v`. Expected: FAIL.
-- [ ] **Step 3:** Implement `scrub.py` with regexes and the key set above. `export_flows.py` reads with `mitmproxy.io.FlowReader` and applies `scrub_json` to JSON bodies and headers, and `scrub_text` to everything else.
-- [ ] **Step 4:** Run `uv run pytest -v && uv run mypy`. Expected: PASS.
-- [ ] **Step 5:** Commit and open a PR titled `chore(client): capture scrubber`. Not `feat`, because nothing a user sees changes and `feat` would release.
+- [x] **Step 2:** Run `uv run pytest packages/coop-client/tests/test_scrub.py -v`. Expected: FAIL.
+- [x] **Step 3:** Implement `scrub.py` with regexes and the key set above. `export_flows.py` reads with `mitmproxy.io.FlowReader` and applies `scrub_json` to JSON bodies and headers, and `scrub_text` to everything else.
+- [x] **Step 4:** Run `uv run pytest -v && uv run mypy`. Expected: PASS.
+- [x] **Step 5:** Commit and open a PR titled `chore(client): capture scrubber`. Not `feat`, because nothing a user sees changes and `feat` would release.
 
 ### Task 8: The static read, as research and as `docs/api.md`
 

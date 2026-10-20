@@ -56,6 +56,18 @@ uv run python scripts/build_zip.py /tmp/coop_dk.zip
 | The bump step | Fetches `main` from GitHub; edits the manifest's version and the changelog, and commits nothing. |
 | The zip build | Writes one zip file; no network request. |
 
+A recorded capture, as one file per request through [the scrubber](docs/domain-language.md#dl-scrubber), in an environment of its own:
+
+```bash
+uv run --no-project --with mitmproxy --with-editable ./packages/coop-client python scripts/export_flows.py .captures/<name>.flows .captures/<name>/ [--ask-secret ...]
+uv run --no-project --with mitmproxy --with-editable ./packages/coop-client python scripts/export_flows_selfcheck.py
+```
+
+| Runnable | What it costs |
+|---|---|
+| The flow export | Reads one capture file and writes into the folder it is given, which must be empty; no request to Coop. uv fetches mitmproxy from PyPI when its cache lacks it. Each `--ask-secret` prompts, without echo, for a known value, which is then masked in every spelling the scrubber knows; the export does not write it to disk. `.captures/` is gitignored; the output is still read by hand before anything from it is committed. |
+| The export self-check | Writes a made-up capture into a temporary folder, exports it and fails if a planted secret survives; no request to Coop. |
+
 The dev Home Assistant at `http://localhost:8123`, with the integration linked from the working
 tree; its config folder is gitignored:
 
