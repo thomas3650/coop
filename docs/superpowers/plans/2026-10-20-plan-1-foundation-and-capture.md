@@ -115,7 +115,7 @@ The fix leaves the existing commits as they are:
 - Consumes: the package tree from Task 1.
 - Produces: `uv run pytest tests/test_docs_name_no_code.py` and `uv run python scripts/check_doc_links.py`, both as CI gates (Task 4).
 
-- [ ] **Step 1: Write the failing tests.**
+- [x] **Step 1: Write the failing tests.**
   - `test_docs_name_no_code`: walks every tracked `.md` file except those under `docs/superpowers/` and `docs/research/`. Builds the forbidden set from the repo itself:
     - the names `coop_client` and `coop_dk`;
     - every module stem under `packages/coop-client/src/coop_client/` and `custom_components/coop_dk/` (excluding `__init__`);
@@ -123,10 +123,10 @@ The fix leaves the existing commits as they are:
 
     Fails, naming the file and line, when one appears. Text inside fenced code blocks in `README.md` is allowed.
   - `test_docs_name_no_code_catches_a_module_name`: writes a temp doc containing `coop_client` and asserts the checker reports it.
-- [ ] **Step 2:** Run it. Expected: the second test FAILS, because no checker function exists yet.
-- [ ] **Step 3:** Implement `find_code_names(root: Path) -> list[tuple[Path, int, str]]` inside the test module, with the test asserting the list is empty.
-- [ ] **Step 4:** Run `uv run pytest tests/test_docs_name_no_code.py -v`. Expected: PASS.
-- [ ] **Step 5:** Commit and open a PR titled `test: docs name no code`.
+- [x] **Step 2:** Run it. Expected: the second test FAILS, because no checker function exists yet.
+- [x] **Step 3:** Implement `find_code_names(root: Path) -> list[tuple[Path, int, str]]` inside the test module, with the test asserting the list is empty.
+- [x] **Step 4:** Run `uv run pytest tests/test_docs_name_no_code.py -v`. Expected: PASS.
+- [x] **Step 5:** Commit and open a PR titled `test: docs name no code`.
 
 ### Task 3: Fill the docs, the skills and the agents
 
