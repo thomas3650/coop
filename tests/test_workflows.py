@@ -200,3 +200,10 @@ def test_hassfest_and_hacs_run_on_pull_requests() -> None:
         on = _on(_load(name))
         assert "pull_request" in on, name
         assert on["push"]["branches"] == ["main"], name
+
+
+def test_release_job_uses_only_checkout() -> None:
+    """The job that can write contents runs no third-party action but checkout."""
+    steps = _load("release.yml")["jobs"]["release"]["steps"]
+    uses = [s["uses"].split("@")[0] for s in steps if "uses" in s]
+    assert uses == ["actions/checkout"]

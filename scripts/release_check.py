@@ -432,8 +432,9 @@ def bump_verdict(
         return Verdict(
             True, False, version, "No manifest.json before this change: nothing to release"
         )
+    if base_changelog is None:
+        raise ReleaseCheckError("CHANGELOG.md is missing at the base")
     base = manifest_version(base_manifest)
-    base_changelog = base_changelog or ""
     if head == base:
         return Verdict(False, False, version, f"{version} unchanged: nothing to release")
     if head < base:

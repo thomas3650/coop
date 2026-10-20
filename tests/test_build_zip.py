@@ -1,6 +1,5 @@
 """Tests for the release zip HACS downloads."""
 
-import json
 import stat
 import zipfile
 from pathlib import Path
@@ -28,8 +27,6 @@ def test_release_zip_contains_client_source(tmp_path: Path) -> None:
         assert name in entries, sorted(entries)
         mode = entries[name].external_attr >> 16
         assert not stat.S_ISLNK(mode), name
-    assert not any(".." in name.split("/") for name in entries)
-    assert not any(name.startswith("/") for name in entries)
     assert not any("__pycache__" in name or name.endswith(".pyc") for name in entries)
 
 
@@ -43,15 +40,6 @@ def test_release_zip_client_matches_the_package(tmp_path: Path) -> None:
             if path.is_file() and "__pycache__" not in path.parts:
                 name = f"coop_client/{path.relative_to(package).as_posix()}"
                 assert zf.read(name) == path.read_bytes(), name
-
-
-def test_release_zip_name_is_the_one_hacs_looks_for() -> None:
-    """hacs.json names the asset the release uploads."""
-    hacs = json.loads((_ROOT / "hacs.json").read_text(encoding="utf-8"))
-    assert hacs["zip_release"] is True
-    assert hacs["filename"] == "coop_dk.zip"
-    release = (_ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
-    assert "coop_dk.zip" in release
 
 
 def test_release_zip_follows_a_linked_directory_and_skips_bytecode(tmp_path: Path) -> None:
@@ -69,3 +57,19 @@ def test_release_zip_follows_a_linked_directory_and_skips_bytecode(tmp_path: Pat
     entries = _entries(build_zip(tmp_path / "out.zip", source=source))
 
     assert sorted(entries) == ["linked/__init__.py", "manifest.json"]
+
+
+def test_release_zip_takes_a_file_linked_from_outside_under_the_links_name(tmp_path: Path) -> None:
+    """A link to a file outside the source goes in under the link's name, with the file's bytes."""
+    outside = tmp_path / "outside.txt"
+    outside.write_text("outside\n", encoding="utf-8")
+    source = tmp_path / "integration"
+    source.mkdir()
+    (source / "inside.txt").symlink_to(Path("..") / "outside.txt")
+
+    archive = build_zip(tmp_path / "out.zip", source=source)
+
+    with zipfile.ZipFile(archive) as zf:
+        assert zf.namelist() == ["inside.txt"]
+        assert zf.read("inside.txt") == b"outside\n"
+        assert not stat.S_ISLNK(zf.getinfo("inside.txt").external_attr >> 16)

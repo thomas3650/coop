@@ -1044,3 +1044,34 @@ def test_cli_missing_revision_is_still_an_error(
     head = _commit(repo, "0.0.0", BOOTSTRAP_LOG)
     assert main(["pr-check", "--title=ci: x", "no-such-commit", head]) == 2
     assert capsys.readouterr().err.startswith("error: ")
+
+
+@pytest.mark.parametrize(
+    ("base_changelog", "head_changelog", "problem"),
+    [
+        (MAIN_LOG, None, "CHANGELOG.md is missing at the head"),
+        (None, MAIN_LOG, "CHANGELOG.md is missing at the base"),
+    ],
+)
+def test_pr_check_changelog_missing(
+    base_changelog: str | None, head_changelog: str | None, problem: str
+) -> None:
+    """With a manifest at both ends, a missing changelog at either is a problem."""
+    assert pr_problems(
+        "ci: x",
+        base_manifest=_manifest("0.1.0"),
+        head_manifest=_manifest("0.1.0"),
+        base_changelog=base_changelog,
+        head_changelog=head_changelog,
+    ) == [problem]
+
+
+def test_bump_with_a_base_manifest_but_no_base_changelog() -> None:
+    """Only a missing base manifest is the first-manifest case; a missing base changelog is an error."""
+    with pytest.raises(ReleaseCheckError, match="CHANGELOG.md is missing at the base"):
+        bump_verdict(
+            base_manifest=_manifest("0.1.0"),
+            head_manifest=_manifest("0.1.1"),
+            base_changelog=None,
+            head_changelog=BUMPED_LOG,
+        )

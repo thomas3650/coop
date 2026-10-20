@@ -17,4 +17,4 @@ What differs here:
 | Bumping Home Assistant | There is no devcontainer image to bump. |
 | Bumping the client | Does not apply: the client ships inside the integration, and the manifest pins no client version. |
 | The PO flow and `way-of-working.md` | Do not apply. |
-| Required workflows | `lint`, `tests`, `gitleaks`, `hassfest` and `hacs`, the same five. `version-check` runs on PRs only. |
+| Required workflows | The release check's list of required workflows, enforced by its test against the workflows that run on `main`. `version-check` runs on PRs only. |

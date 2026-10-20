@@ -67,16 +67,12 @@ jobs:
             echo "Tag ${TAG} points at ${tagged}, not ${COMMIT}"
             exit 1
           fi
-      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884  # v10.3.0
-        if: steps.existing.outputs.exists != 'true'
-        with:
-          python-version: "3.14"
-          enable-cache: false
       - name: Build the zip HACS downloads
         if: steps.existing.outputs.exists != 'true'
         run: |
-          # The client is a symlink in the tree; the zip holds its source as regular files.
-          uv run --no-project --python 3.14 python scripts/build_zip.py "${RUNNER_TEMP}/coop_dk.zip"
+          # Stdlib only, so the runner's python3 builds it. The client is a symlink in the tree; the
+          # zip holds its source as regular files.
+          python3 scripts/build_zip.py "${RUNNER_TEMP}/coop_dk.zip"
       - name: Create the GitHub release
         if: steps.existing.outputs.exists != 'true'
         env:
