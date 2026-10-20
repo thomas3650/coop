@@ -270,9 +270,9 @@ Invoke `writing-coop-docs` and `examining-coop-endpoints`.
     Each entry follows `docs/api-standard.md`, every claim is marked "inferred from app 26.12.0", and no class names appear. It ends with **Unknowns**: one item per row of the spec's capture question table.
 - Modify: `docs/research/README.md`, adding a row.
 
-- [ ] **Step 1:** Write both docs.
-- [ ] **Step 2:** Run the secret scan line from `api-standard.md`, then `scripts/check_doc_links.py`, then `tests/test_docs_name_no_code.py`. Expected: nothing printed; 0 broken; PASS.
-- [ ] **Step 3:** Commit and open a PR titled `docs: Coop API reference from the static read of app 26.12.0`.
+- [x] **Step 1:** Write both docs.
+- [x] **Step 2:** Run the secret scan line from `api-standard.md`, then `scripts/check_doc_links.py`, then `tests/test_docs_name_no_code.py`. Expected: nothing printed; 0 broken; PASS.
+- [x] **Step 3:** Commit and open a PR titled `docs: Coop API reference from the static read of app 26.12.0`.
 
 ### Task 9: The capture rig and the supervised capture (with the owner)
 
