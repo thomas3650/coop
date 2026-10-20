@@ -41,12 +41,72 @@ _MASKED_KEYS = [
 ]
 
 
+# The placeholder each key's value becomes, per the redaction list; `<redacted>`
+# unless named here.
+_PLACEHOLDER_FOR = {"app_installation_id": "<uuid>"}
+
+
 @pytest.mark.parametrize("key", _MASKED_KEYS)
 def test_masks_by_key(key: str) -> None:
     secret = f"v-{key}-s3cr3t"
     out = scrub_json({"outer": [{key: secret, "keep": "visible"}]})
-    assert out == {"outer": [{key: "<redacted>", "keep": "visible"}]}
+    expected = _PLACEHOLDER_FOR.get(key, "<redacted>")
+    assert out == {"outer": [{key: expected, "keep": "visible"}]}
     _assert_absent(json.dumps(out), secret)
+
+
+def test_app_installation_id_becomes_uuid_in_headers_and_forms() -> None:
+    secret = "inst-s3cr3t"
+    assert scrub_headers([("App-Installation-Id", secret)]) == [["App-Installation-Id", "<uuid>"]]
+    assert scrub_form(f"app_installation_id={secret}") == [["app_installation_id", "<uuid>"]]
+
+
+def test_list_and_item_names_masked_by_context() -> None:
+    value = {
+        "member": {"name": "Member Name"},
+        "name": "Top Name",
+        "lists": [
+            {
+                "name": "Weekly list",
+                "description": "List description",
+                "items": [{"name": "Oat milk", "description": "Item note"}],
+            }
+        ],
+        "shoppingList": {"name": "Other list"},
+    }
+    out = scrub_json(value)
+    assert out == {
+        "member": "<redacted>",
+        "name": "<redacted>",
+        "lists": [
+            {
+                "name": "<list>",
+                "description": "<list>",
+                "items": [{"name": "<item>", "description": "<item>"}],
+            }
+        ],
+        "shoppingList": {"name": "<list>"},
+    }
+    flat = json.dumps(out)
+    for original in [
+        "Member",
+        "Top Name",
+        "Weekly",
+        "List description",
+        "Oat",
+        "Item note",
+        "Other",
+    ]:
+        assert original not in flat
+
+
+@pytest.mark.parametrize(
+    ("key", "placeholder"),
+    [("itemName", "<item>"), ("item_description", "<item>"), ("listName", "<list>")],
+)
+def test_list_and_item_name_keys(key: str, placeholder: str) -> None:
+    assert scrub_json({key: "v-s3cr3t"}) == {key: placeholder}
+    assert scrub_form(f"{key}=v-s3cr3t") == [[key, placeholder]]
 
 
 @pytest.mark.parametrize("key", ["ACCESS_TOKEN", "accessToken", "Refresh-Token"])
@@ -286,7 +346,6 @@ def test_code_challenge_method_stays_visible() -> None:
     [
         "given_name",
         "family_name",
-        "itemName",
         "Input.Email",
         "phone_number",
         "homeAddress",

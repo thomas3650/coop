@@ -17,9 +17,6 @@ dev = [
     "coop-client",
     "types-pyyaml",
 ]
-capture = [
-    "mitmproxy",
-]
 
 [tool.uv]
 default-groups = ["dev"]

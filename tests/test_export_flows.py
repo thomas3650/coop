@@ -1,7 +1,7 @@
 """The flow export: one scrubbed JSON file per flow, nothing raw, nothing outside out_dir.
 
 The flows are stand-ins with the attributes the export reads from a mitmproxy
-`HTTPFlow`, so the suite needs no capture group.
+`HTTPFlow`, so the suite does not need mitmproxy.
 """
 
 import gzip

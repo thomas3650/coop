@@ -1,6 +1,10 @@
 """Export a mitmproxy capture as one scrubbed JSON file per flow.
 
-    uv run --group capture python scripts/export_flows.py <flows> <out_dir>
+    uv run --no-project --with mitmproxy --with-editable ./packages/coop-client python scripts/export_flows.py <flows> <out_dir>
+
+In an environment of its own, from the repo root: the project environment does not
+resolve a usable mitmproxy beside Home Assistant's pins. Editable, because uv caches
+a built `coop-client` under its unchanged version and would run a stale scrubber.
 
 Each file holds the method, URL, status, and the request's and response's headers
 and body, all through the scrubber. A flow that cannot be read as an HTTP exchange
@@ -117,7 +121,7 @@ def main(argv: list[str]) -> int:
     if len(argv) != 2:
         print("usage: export_flows.py <flows> <out_dir>", file=sys.stderr)
         return 2
-    # Imported here so the offline suite does not need the capture group.
+    # Imported here so the offline suite does not need mitmproxy.
     from mitmproxy.io import FlowReader
 
     with Path(argv[0]).open("rb") as flows_file:

@@ -3,7 +3,7 @@
 It masks the redaction list in `docs/api-standard.md` by key wherever a key is
 visible (JSON, headers, form bodies, URL queries and fragments, hidden form inputs,
 `key=value` text) and by shape everywhere else. Personal data and list content are
-masked as `<redacted>`, not as `<list>` or `<item>`. A value under a key outside
+masked with the placeholders that list names. A value under a key outside
 its key set (an item's text under `text`, say) is masked only if its shape is
 recognised, so the result is still read by hand.
 """
@@ -15,6 +15,9 @@ from urllib.parse import quote, quote_plus, unquote_plus, urlsplit, urlunsplit
 
 REDACTED = "<redacted>"
 ID = "<id>"
+UUID = "<uuid>"
+LIST = "<list>"
+ITEM = "<item>"
 
 # Keys masked whole, compared after `_normalise`.
 _SECRET_KEYS = frozenset(
@@ -89,9 +92,33 @@ def is_secret_key(key: str) -> bool:
     )
 
 
-def _mask_for(key: str) -> str | None:
+def _context_of(key: str) -> str | None:
+    """`ITEM` or `LIST` if `key` names items or lists (`items`, `shoppingList`)."""
+    n = _normalise(key)
+    if "item" in n:
+        return ITEM
+    if "list" in n:
+        return LIST
+    return None
+
+
+def _mask_for(key: str, context: str | None = None) -> str | None:
+    """The placeholder for the value under `key`, or None to keep it.
+
+    `context` is `ITEM` or `LIST` when the key sits inside an item or a list, so a
+    bare `name` or `description` there is list content, not the member's.
+    """
     if is_id_key(key):
         return ID
+    n = _normalise(key)
+    if n == "appinstallationid":
+        return UUID
+    if n.endswith(("name", "description")):
+        own = _context_of(key)
+        if own is not None:
+            return own
+        if n in {"name", "description"} and context is not None:
+            return context
     if is_secret_key(key):
         return REDACTED
     return None
@@ -200,16 +227,24 @@ def scrub_text(text: str, secrets: Iterable[str] = ()) -> str:
 def scrub_json(value: object, *, secrets: Iterable[str] = ()) -> object:
     """Mask a parsed JSON value: by key, recursively, and every other string by
     `scrub_text`. A masked key's value is replaced whole, container or not."""
-    secrets = tuple(secrets)
+    return _scrub_json(value, tuple(secrets), None)
+
+
+def _scrub_json(value: object, secrets: tuple[str, ...], context: str | None) -> object:
     if isinstance(value, dict):
         out: dict[object, object] = {}
         for key, item in value.items():
-            mask = _mask_for(key) if isinstance(key, str) else None
-            scrubbed_key = scrub_text(key, secrets) if isinstance(key, str) else key
-            out[scrubbed_key] = mask if mask is not None else scrub_json(item, secrets=secrets)
+            if not isinstance(key, str):
+                out[key] = _scrub_json(item, secrets, context)
+                continue
+            mask = _mask_for(key, context)
+            inner = _context_of(key) or context
+            out[scrub_text(key, secrets)] = (
+                mask if mask is not None else _scrub_json(item, secrets, inner)
+            )
         return out
     if isinstance(value, list):
-        return [scrub_json(item, secrets=secrets) for item in value]
+        return [_scrub_json(item, secrets, context) for item in value]
     if isinstance(value, str):
         return scrub_text(value, secrets)
     return value
@@ -274,14 +309,15 @@ def scrub_headers(
 ) -> list[list[str]]:
     """Mask headers as `[name, value]` pairs, keeping repeats such as `Set-Cookie`.
 
-    A header named in the key set is masked whole. A value holding a URL (`Location`,
+    A header named in the key set is masked whole, with its key's placeholder. A value holding a URL (`Location`,
     `Referer`) is masked as a URL, so an authorization code in its query is caught.
     """
     secrets = tuple(secrets)
     out: list[list[str]] = []
     for name, value in headers:
-        if _mask_for(name) is not None:
-            out.append([name, REDACTED])
+        mask = _mask_for(name)
+        if mask is not None:
+            out.append([name, mask])
         elif "://" in value or value.startswith("/"):
             out.append([name, scrub_url(value, secrets)])
         else:
