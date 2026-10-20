@@ -686,3 +686,40 @@ def test_escaped_container_scan_closes_after_an_escaped_backslash() -> None:
     # The inner JSON holds the string `a\`, written `a\\\\` once escaped.
     text = 'p={\\"member\\":{\\"note\\":\\"a\\\\\\\\\\"},\\"keep\\":1}'
     assert scrub_text(text) == 'p={\\"member\\":\\"<redacted>\\",\\"keep\\":1}'
+
+
+def test_input_name_is_read_after_html_unescaping() -> None:
+    html = '<input type="text" name="pass&#119;ord" value="pw-s3cr3t">'
+    assert "pw-s3cr3t" not in scrub_text(html)
+
+
+def test_truncated_escaped_string_ends_where_its_enclosing_string_closes() -> None:
+    text = json.dumps({"payload": '{"password": "ab-s3cr3t', "keep": "kpvisible"})
+    out = scrub_text(text)
+    assert "ab-s3cr3t" not in out
+    assert out.endswith('"keep": "kpvisible"}')
+
+
+def test_truncated_escaped_container_ends_where_its_enclosing_string_closes() -> None:
+    text = json.dumps({"payload": '{"address": {"street": "Hidden', "keep": "kpvisible"})
+    out = scrub_text(text)
+    assert "Hidden" not in out
+    assert out.endswith('"keep": "kpvisible"}')
+
+
+def test_escaped_container_ends_where_a_shallower_string_closes() -> None:
+    inner = json.dumps({"q": '{"address": {"street": 1', "keep": "kpvisible"})
+    out = scrub_text(json.dumps({"p": inner}))
+    assert "street" not in out
+    assert 'keep\\": \\"kpvisible' in out
+
+
+@pytest.mark.parametrize(
+    "tag",
+    [
+        '<input type="text" name="note" name="password" value="pw-s3cr3t">',
+        '<input type="text" type="hidden" name="note" value="pw-s3cr3t">',
+    ],
+)
+def test_a_repeated_name_or_type_attribute_still_masks(tag: str) -> None:
+    assert "pw-s3cr3t" not in scrub_text(tag)

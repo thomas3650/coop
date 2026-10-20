@@ -1,15 +1,17 @@
 """The scrubber: masks secrets and personal data in a capture before it is committed.
 
-By key, where a key is visible: parsed JSON (and JSON held in a string), headers,
-`application/x-www-form-urlencoded` and `multipart/form-data` bodies, URL queries
-and fragments, `key%3Dvalue` pairs inside an encoded URL, `"key": value` and
-`key=value` in text, and `<input>` values. By shape only, everywhere else: a JWT, a
+By key, where a key is visible: parsed JSON (and JSON held in a string, one or more
+levels deep), headers, `application/x-www-form-urlencoded` and `multipart/form-data`
+bodies (and a multipart part in text), URL queries and fragments, `key%3Dvalue`
+pairs inside an encoded URL, `"key": value` and `key=value` in text, and `<input>`
+values. By shape only, everywhere else: a JWT, a
 bearer value, `idsrv*` and `.AspNetCore.*` cookie values, an email address, a
 Danish phone number, a UUID, a run of 32 or more base64url characters, and any
 secret the caller passes in. A value under a key outside the key set, in a shape
 none of these match, comes through unmasked; the result is still read by hand.
 """
 
+import html
 import json
 import re
 from collections.abc import Callable, Iterable
@@ -162,34 +164,34 @@ def _spellings(secret: str) -> set[str]:
 _JWT = re.compile(
     r"eyJ[A-Za-z0-9_-]{5,}(?:\.[A-Za-z0-9_-]*)+|(?<![A-Za-z0-9_-])eyJ[A-Za-z0-9_-]{10,}"
 )
-_BEARER = re.compile(r"\b(Bearer)\s+[^\s\"',;&]+", re.IGNORECASE)
-_SESSION_COOKIE = re.compile(r"((?:idsrv|\.AspNetCore\.)[^=;\s]*=)[^;\s\"']+", re.IGNORECASE)
-_INPUT_TAG = re.compile(r"<input\b[^>]*>", re.IGNORECASE)
-
-
-def _attribute(name: str) -> re.Pattern[str]:
-    """An HTML attribute, its value double-quoted, single-quoted or bare. Not the
-    tail of a longer attribute name such as `data-{name}`."""
-    return re.compile(
-        rf"((?<![\w-]){name}\s*=\s*)(?:\"([^\"]*)\"|'([^']*)'|([^\s>\"']+))", re.IGNORECASE
-    )
-
-
-_ATTR_NAME = _attribute("name")
-_ATTR_TYPE = _attribute("type")
-# Every attribute whose name ends in `value`: `value`, `data-value`,
-# `data-original-value`. Unlike `name` and `type`, no prefix is excluded.
-_ATTR_ANY_VALUE = re.compile(
-    r"(\b[\w-]*value\s*=\s*)(?:\"[^\"]*\"|'[^']*'|[^\s>\"']+)", re.IGNORECASE
+# The scheme and its value split by whitespace, or by `+` or `%20` in a form or a URL.
+_BEARER = re.compile(r"\b(Bearer)(?:\s|\+|%20)+[^\s\"',;&+]+", re.IGNORECASE)
+# The cookie's name, then `=` (`%3D`, `%253D` once or twice encoded), then its value up
+# to the end of the cookie or of a query pair, plain or encoded.
+_SESSION_COOKIE = re.compile(
+    r"((?:idsrv|\.AspNetCore\.)[^=;\s&%]*(?:=|%3D|%253D))(?:(?!%26|%2526)[^;\s\"'&])+",
+    re.IGNORECASE,
 )
+# An `<input>` tag, a `>` inside a quoted attribute value included; if a quote never
+# closes, up to the first `>`.
+_INPUT_TAG = re.compile(r"""<input\b(?:[^>"']|"[^"]*"|'[^']*')*>|<input\b[^>]*>""", re.IGNORECASE)
+# One attribute of a tag: its name, and its value double-quoted, single-quoted or bare.
+_TAG_ATTRIBUTE = re.compile(r"""([^\s"'<>/=]+)(?:\s*=\s*("[^"]*"|'[^']*'|[^\s"'>]+))?""")
+
+
 # An input whose value is masked whatever its name.
 _MASKED_INPUT_TYPES = frozenset({"password", "hidden"})
-# `\"key\": value` in JSON that is itself inside a JSON string. The value is an
-# escaped string, which ends at the first `\"` that is not part of an escaped
-# backslash (`\\\\`) or an escaped inner quote (`\\\"`), or a bare scalar.
-_ESCAPED_JSON_PAIR = re.compile(
-    r'(\\")([^"\\]{1,100})\\"(\s*:\s*)'
-    r'(\\"(?:\\\\\\"|\\\\\\\\|\\[^"\\]|[^\\])*\\"|[^,}\]\s\\]+)'
+# A key in JSON held inside a JSON string. At escape depth d, each quote of that JSON
+# is written as 2**d - 1 backslashes and a `"`: `\"key\"` at depth 1, `\\\"key\\\"`
+# at depth 2.
+_ESCAPED_KEY = re.compile(r'(?<!\\)(\\+)"([^"\\]{1,100})\1"(\s*:\s*)')
+_ESCAPED_SCALAR = re.compile(r"[^,}\]\s\\]+")
+# One part of a `multipart/form-data` body in text: its headers, then its value up to
+# the next boundary line.
+_MULTIPART_PART = re.compile(
+    r'(Content-Disposition:[^\r\n]*?\bname="([^"\r\n]*)"[^\r\n]*\r?\n(?:[^\r\n]+\r?\n)*\r?\n)'
+    r"(.*?)(?=\r?\n--|\Z)",
+    re.IGNORECASE | re.DOTALL,
 )
 # `"key": value` in JSON text: a string (escapes included) or a bare scalar.
 _JSON_PAIR = re.compile(
@@ -213,33 +215,50 @@ _UUID = re.compile(
 # A long hex or base64url run: an API key, an opaque token, a session id.
 _LONG_TOKEN = re.compile(r"(?<![A-Za-z0-9_-])[A-Za-z0-9_-]{32,}=*")
 # A Danish phone number: eight digits, run together, in pairs split by spaces or
-# hyphens, or in fours; with or without `+45`, `0045` or `45`. Not inside a longer
+# hyphens, or in fours; with or without `+45`, `0045` or `45`. A space may be written
+# `+` or `%20`, and the `+` of `+45` `%2B`, as in a form or a URL. Not inside a longer
 # digit run, so timestamps and EANs survive.
 _PHONE = re.compile(
-    r"(?<![\d+])(?:(?:\+|00)?45[ -]?)?(?:\d{8}|\d{2}(?:[ -]\d{2}){3}|\d{4} \d{4})(?!\d)"
+    r"(?<![\d+])(?:(?:\+|00|%2B)?45(?:[ +-]|%20)?)?"
+    r"(?:\d{8}|\d{2}(?:(?:[ +-]|%20)\d{2}){3}|\d{4}(?: |\+|%20)\d{4})(?!\d)",
+    re.IGNORECASE,
 )
 _PHONE_NUMBER = re.compile(r"(?:45)?\d{8}")
 _CONTAINER_KEY = re.compile(r"([\"'])([^\"'\\]{1,100})\1(\s*:\s*)(?=[{\[])")
-_ESCAPED_CONTAINER_KEY = re.compile(r'(\\")([^"\\]{1,100})\\"(\s*:\s*)(?=[{\[])')
-
-
-def _attribute_value(pattern: re.Pattern[str], tag: str) -> str | None:
-    found = pattern.search(tag)
-    if found is None:
-        return None
-    return next(g for g in found.groups()[1:] if g is not None)
 
 
 def _mask_input_tag(match: re.Match[str]) -> str:
+    """Mask every attribute whose name ends in `value` (`value`, `data-value`) of an
+    input whose name is a masked key, or whose type is password or hidden. The tag
+    is read attribute by attribute, so text inside one attribute's value is never
+    taken for another attribute."""
     tag = match.group(0)
-    name = _attribute_value(_ATTR_NAME, tag)
-    input_type = (_attribute_value(_ATTR_TYPE, tag) or "").lower()
-    mask = _mask_for(name) if name is not None else None
-    if mask is None and input_type in _MASKED_INPUT_TYPES:
+    attributes = list(_TAG_ATTRIBUTE.finditer(tag, len("<input"), len(tag) - 1))
+
+    def values_of(attribute: str) -> list[str]:
+        values = [f.group(2) for f in attributes if f.group(1).lower() == attribute and f.group(2)]
+        return [html.unescape(v[1:-1] if v[0] in "\"'" else v) for v in values]
+
+    # Every `name` and `type`, not only the first, so a repeated attribute masks.
+    mask = next((m for n in values_of("name") if (m := _mask_for(n)) is not None), None)
+    if mask is None and not _MASKED_INPUT_TYPES.isdisjoint(t.lower() for t in values_of("type")):
         mask = REDACTED
     if mask is None:
         return tag
-    return _ATTR_ANY_VALUE.sub(lambda m: f'{m.group(1)}"{mask}"', tag)
+    out: list[str] = []
+    position = 0
+    for found in attributes:
+        if found.group(2) is not None and found.group(1).lower().endswith("value"):
+            out.append(tag[position : found.start(2)] + f'"{mask}"')
+            position = found.end(2)
+    out.append(tag[position:])
+    return "".join(out)
+
+
+def _mask_multipart_part(match: re.Match[str]) -> str:
+    headers, name, _value = match.groups()
+    mask = _mask_for(name)
+    return match.group(0) if mask is None else headers + mask
 
 
 def _container_end(text: str, start: int) -> int:
@@ -268,27 +287,56 @@ def _container_end(text: str, start: int) -> int:
     return len(text)
 
 
-def _escaped_container_end(text: str, start: int) -> int:
-    """`_container_end` for JSON held inside a JSON string, where a string opens and
-    closes with `\\"`, and `\\\\\\"` and `\\\\\\\\` are escapes inside it."""
+def _backslashes_before(text: str, index: int) -> int:
+    """How many backslashes run up to `index` in `text`."""
+    start = index
+    while start > 0 and text[start - 1] == "\\":
+        start -= 1
+    return index - start
+
+
+def _escaped_string_end(text: str, start: int, run: int) -> int:
+    """The index after a string in JSON held inside a JSON string, whose content
+    starts at `start` and whose quotes are written as `run` backslashes and a `"`.
+
+    At escape depth d (`run` is 2**d - 1), a `"` after k backslashes closes the
+    string when k % 2**(d+1) is `run`, and is a quote inside it when the remainder
+    is 2**(d+1) - 1. Any other run belongs to a shallower string, which has closed:
+    the string ends before that run.
+    """
+    period = 2 * (run + 1)
+    index = start
+    while (quote_at := text.find('"', index)) != -1:
+        k = _backslashes_before(text, quote_at)
+        if k % period == run:
+            return quote_at + 1
+        if k % period != period - 1:
+            return quote_at - k
+        index = quote_at + 1
+    return len(text)
+
+
+def _escaped_container_end(text: str, start: int, run: int) -> int:
+    """`_container_end` for JSON held inside a JSON string, its quotes written as
+    `run` backslashes and a `"`. A quote of any other depth outside a string means
+    the enclosing string has closed, and the container ends before it."""
     depth = 0
-    in_string = False
     index = start
     while index < len(text):
-        if in_string:
-            if text.startswith(('\\\\\\"', "\\\\\\\\"), index):
-                index += 4
-            elif text.startswith('\\"', index):
-                in_string = False
-                index += 2
-            else:
-                index += 1
-            continue
-        if text.startswith('\\"', index):
-            in_string = True
-            index += 2
-            continue
         char = text[index]
+        if char == "\\":
+            k = 1
+            while text.startswith("\\", index + k):
+                k += 1
+            if text.startswith('"', index + k):
+                if k != run:
+                    return index
+                index = _escaped_string_end(text, index + k + 1, run)
+                continue
+            index += k
+            continue
+        if char == '"':
+            return index
         if char in "{[":
             depth += 1
         elif char in "}]":
@@ -297,6 +345,38 @@ def _escaped_container_end(text: str, start: int) -> int:
                 return index + 1
         index += 1
     return len(text)
+
+
+def _escaped_value_end(text: str, start: int, run: int) -> int | None:
+    """The index after the value at `start` in JSON held inside a JSON string, or None
+    if no value starts there."""
+    if text.startswith("\\" * run + '"', start):
+        return _escaped_string_end(text, start + run + 1, run)
+    if text.startswith(("{", "["), start):
+        return _escaped_container_end(text, start, run)
+    scalar = _ESCAPED_SCALAR.match(text, start)
+    return scalar.end() if scalar is not None else None
+
+
+def _mask_escaped_json(text: str) -> str:
+    """Mask the value, string, scalar or container, under a masked key in JSON held
+    inside a JSON string, at escape depth 1 or deeper."""
+    out: list[str] = []
+    position = 0
+    while (found := _ESCAPED_KEY.search(text, position)) is not None:
+        quote_run, key, _colon = found.groups()
+        run = len(quote_run)
+        mask = _mask_for(key)
+        end = _escaped_value_end(text, found.end(), run) if mask is not None else None
+        if mask is None or end is None:
+            out.append(text[position : found.end()])
+            position = found.end()
+            continue
+        delimiter = quote_run + '"'
+        out.append(text[position : found.end()] + delimiter + mask + delimiter)
+        position = end
+    out.append(text[position:])
+    return "".join(out)
 
 
 def _mask_containers(
@@ -317,10 +397,8 @@ def _mask_containers(
 
 
 def _mask_keyed_containers(text: str) -> str:
-    """Mask an object or array under a masked key in JSON text, and in JSON held
-    inside a JSON string, balanced to its end."""
-    text = _mask_containers(text, _CONTAINER_KEY, _container_end, '"')
-    return _mask_containers(text, _ESCAPED_CONTAINER_KEY, _escaped_container_end, '\\"')
+    """Mask an object or array under a masked key in JSON text, balanced to its end."""
+    return _mask_containers(text, _CONTAINER_KEY, _container_end, '"')
 
 
 def _mask_json_pair(match: re.Match[str]) -> str:
@@ -329,14 +407,6 @@ def _mask_json_pair(match: re.Match[str]) -> str:
     if mask is None:
         return match.group(0)
     return f'{quote_char}{key}{quote_char}{colon}"{mask}"'
-
-
-def _mask_escaped_json_pair(match: re.Match[str]) -> str:
-    escaped_quote, key, colon, _value = match.groups()
-    mask = _mask_for(key)
-    if mask is None:
-        return match.group(0)
-    return f"{escaped_quote}{key}{escaped_quote}{colon}{escaped_quote}{mask}{escaped_quote}"
 
 
 def _pair_masker(match: re.Match[str]) -> str:
@@ -352,7 +422,7 @@ _RULES: list[tuple[re.Pattern[str], str | Callable[[re.Match[str]], str]]] = [
     (_BEARER, r"\1 <token>"),
     (_SESSION_COOKIE, r"\1" + REDACTED),
     (_INPUT_TAG, _mask_input_tag),
-    (_ESCAPED_JSON_PAIR, _mask_escaped_json_pair),
+    (_MULTIPART_PART, _mask_multipart_part),
     (_JSON_PAIR, _mask_json_pair),
     (_ENCODED_PAIR, _pair_masker),
     (_PLAIN_PAIR, _pair_masker),
@@ -372,6 +442,7 @@ def scrub_text(text: str, secrets: Iterable[str] = ()) -> str:
     # Longest first, so a secret that contains another is masked whole.
     for spelling in sorted(spellings, key=len, reverse=True):
         text = text.replace(spelling, REDACTED)
+    text = _mask_escaped_json(text)
     text = _mask_keyed_containers(text)
     for pattern, repl in _RULES:
         text = pattern.sub(repl, text)
