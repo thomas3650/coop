@@ -13,3 +13,12 @@ __pycache__/
 
 # subagent-driven-development scratch: ledger, briefs, reports, review diffs
 .superpowers/
+
+# mitmproxy captures of the Coop app: tokens, member data, list content
+.captures/
+# a dev Home Assistant's config directory
+/config/
+# the Coop app's own binaries and anything decompiled from them
+*.apk
+*.xapk
+decompiled/
