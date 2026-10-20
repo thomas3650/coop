@@ -170,7 +170,7 @@ Pin every action by SHA with a version comment, as `HA-NortecGo` does, and set `
 - [x] **Step 1:** Write the workflows.
 - [x] **Step 2:** Run `uv run actionlint && uv run zizmor --offline .github/workflows`. Expected: clean.
 - [x] **Step 3:** Push the branch and open a PR titled `ci: lint, tests and gitleaks`. Expected: all three checks green on the PR (`gh pr checks`).
-- [ ] **Step 4:** After the merge, set branch protection on `main` with `gh api`: require a PR, require the `lint`, `tests` and `gitleaks` checks, no force pushes. Record the settings in the ledger.
+- [x] **Step 4:** After the merge, set branch protection on `main` with `gh api`: require a PR, require the `lint`, `tests` and `gitleaks` checks, no force pushes. Record the settings in the ledger.
 
 ### Task 5: Integration skeleton, HACS files and the release pipeline
 
@@ -201,7 +201,7 @@ Pin every action by SHA with a version comment, as `HA-NortecGo` does, and set `
 - [x] **Step 2:** Run `uv run pytest tests/test_build_zip.py tests/test_release_check.py -v`. Expected: FAIL (modules missing).
 - [x] **Step 3:** Implement `build_zip` and port `release_check.py`. Then add the workflows. `release.yml` runs `build_zip.py` and attaches the zip to the GitHub release; the rest follows HA-NortecGo.
 - [x] **Step 4:** Run `uv run pytest -v && uv run mypy && uv run actionlint && uv run zizmor --offline .github/workflows`. Expected: PASS and clean.
-- [ ] **Step 5:** Open a PR titled `ci: integration skeleton and auto-release`. Expected: hassfest and hacs green on the PR, and `version-check` green for the `ci:` title. After the merge, no release is published, because `ci` releases nothing. Add `hassfest`, `hacs` and `version-check` to the required checks.
+- [x] **Step 5:** Open a PR titled `ci: integration skeleton and auto-release`. Expected: hassfest and hacs green on the PR, and `version-check` green for the `ci:` title. After the merge, no release is published, because `ci` releases nothing. Add `hassfest`, `hacs` and `version-check` to the required checks.
 
 ### Task 6: Renovate and the dev Home Assistant
 
