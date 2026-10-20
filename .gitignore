@@ -1,0 +1,15 @@
+.env
+.env.*
+!.env.example
+.claude/*
+!.claude/settings.json
+!.claude/skills/
+!.claude/agents/
+__pycache__/
+.venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# subagent-driven-development scratch: ledger, briefs, reports, review diffs
+.superpowers/
