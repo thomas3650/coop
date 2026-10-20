@@ -16,14 +16,14 @@ no response has been captured. The capture turns entries measured
 
 | Host | What | Status |
 |---|---|---|
-| `https://api.coopdk.lobyco.net/` | the default base of the remote configuration | inferred from app 26.12.0 |
-| the remote configuration's `oidc.configuration` | the login: `issuer`, `authorizationEndpoint`, `tokenEndpoint`, `logoutEndpoint`; the host is not in the app | inferred from app 26.12.0 |
-| the remote configuration's `shoppingListV2.baseUrl` | the shopping-list service; every shopping-list path below is relative to it; the host is not in the app | inferred from app 26.12.0 |
-| `unleash.coopdk.lobyco.net`, `api.omni.coop.dk` | feature flags and marketing analytics, each with a key built into the app; not used by this project | inferred from app 26.12.0 |
+| `https://api.coopdk.lobyco.net/` | the default base of the remote configuration; the configuration's path is relative to it | inferred from app 26.12.0 |
+| the remote configuration's `oidc.configuration` | the login: `issuer`, `authorizationEndpoint`, `tokenEndpoint`, `logoutEndpoint`; the host was not found in the app | inferred from app 26.12.0 |
+| the remote configuration's `shoppingListV2.baseUrl` | the shopping-list service; every shopping-list path below is relative to it, as the app writes it (no leading slash); the host was not found in the app | inferred from app 26.12.0 |
+| `unleash.coopdk.lobyco.net`, `api.omni.coop.dk` | feature flags and marketing analytics, each with a key built into the app | inferred from app 26.12.0 |
 
 The app fetches the remote configuration first (A-CONFIG-1). Its client id,
-redirect URIs, the shopping-list base URL and subscription key are not written in
-the app; they come from that configuration.
+redirect URIs, the shopping-list base URL and subscription key were not found in
+the app; the app reads them from that configuration.
 
 ## Headers on every shopping-list call
 
@@ -36,9 +36,8 @@ the app; they come from that configuration.
 | `X-ActionName` | one name per call, in each entry's Notes; whether it reaches the server is unknown | inferred from app 26.12.0 |
 | `X-Auth-Compatibility-Mode` | `Platform`, sent when a call's scopes include one from a fixed set; whether the shopping-list scopes are in it is unknown | inferred from app 26.12.0 |
 
-No shopping-list call carries the app's request signature, `X-Request-Signature`;
-the calls found carrying it are payment and subscription calls (inferred from app
-26.12.0).
+No shopping-list call carries the placeholder header that makes the app add its
+request signature, `X-Request-Signature` (inferred from app 26.12.0).
 
 ## Errors the app names
 
@@ -46,12 +45,12 @@ Which call answers with which error is not known (inferred from app 26.12.0).
 
 | Area | Names |
 |---|---|
-| Login and tokens | `access_denied`, `user_blocked`, `invalid_grant`, `token_inactive`; a 403 `insufficient_scope` |
+| Login and tokens | `access_denied`, `user_blocked`, `invalid_grant`, `token_inactive`; a 403 `insufficient_scope`; `CredentialsPromptRequired` on a 401 or 403, after which the app retries the call |
 | Shopping list | too many items, too many lists, too many subscribers, list not found, item not found, operation forbidden, invalid category, sharing link not valid — conditions the app distinguishes; the codes the server sends for them are unknown |
 
 ---
 
-## GET /appconfig/v1/AppConfiguration
+## GET appconfig/v1/AppConfiguration
 
 Fetch the remote configuration: the login's endpoints and client, and each service's base URL, key and scopes.
 
@@ -132,7 +131,7 @@ Exchange the authorization code for tokens: the end of a login.
 | code | form | string | unknown | `<redacted>`, from the redirect |
 | client_id | form | string | unknown | the configuration's client id |
 | code_verifier | form | string | unknown | `<redacted>`, the PKCE verifier |
-| redirect_uri | form | string | unknown | the one the authorize request used |
+| redirect_uri | form | string | unknown | one of the configuration's `redirectUris`, picked at random again, apart from the authorize request's pick |
 
 **Response** — none captured.
 
@@ -165,8 +164,8 @@ No `scope` is sent (inferred from app 26.12.0).
 **Response** — none captured.
 
 **Cost & mutation** — <a id="a-auth-3"></a>A-AUTH-3: whether the refresh token
-rotates is unknown, so it is treated as use-once and the new one stored before the
-next request ([spec](superpowers/specs/2026-10-20-coop-shopping-list-design.md#2-the-capture--the-gono-go-gate)).
+rotates is unknown; [refresh token](domain-language.md#dl-refresh-token) holds how
+this project handles that.
 Who-else-calls: the app, on a 401 from a service, before retrying the call
 (inferred from app 26.12.0).
 
@@ -174,7 +173,7 @@ Who-else-calls: the app, on a 401 from a service, before retrying the call
 
 **Notes** — the response is as in A-AUTH-2 (inferred from app 26.12.0).
 
-## GET /v1/shopping-lists
+## GET v1/shopping-lists
 
 List the account's shopping lists.
 
@@ -199,7 +198,7 @@ Who-else-calls: the app (inferred from app 26.12.0).
 (`Owner`, `ReadWrite`, `Undefined`), `shareType` (`Private`, `Shared`,
 `Undefined`), `itemsCount`, `subscribersCount`, `createdDate`, `modifiedDate`.
 
-## GET /v1/shopping-lists/{listId}/items
+## GET v1/shopping-lists/{listId}/items
 
 List a list's items.
 
@@ -227,7 +226,7 @@ Who-else-calls: the app (inferred from app 26.12.0).
 `categoryId`. That the response holds the open items and Indkøbte varer together
 is inferred, not seen.
 
-## POST /v1/shopping-lists/{listId}/items/bulk
+## POST v1/shopping-lists/{listId}/items/bulk
 
 Add one or more items to a list.
 
@@ -244,8 +243,8 @@ Add one or more items to a list.
 
 **Response** — none captured.
 
-**Cost & mutation** — <a id="a-list-3"></a>A-LIST-3: adds items to the list,
-which every family member's app shows (inferred from app 26.12.0).
+**Cost & mutation** — <a id="a-list-3"></a>A-LIST-3: adds items to the
+list (inferred from app 26.12.0).
 Who-else-calls: the app, when someone adds an item (inferred from app 26.12.0).
 
 **Errors** — none captured; the app's own error names are under [Errors the app names](#errors-the-app-names).
@@ -253,7 +252,7 @@ Who-else-calls: the app, when someone adds an item (inferred from app 26.12.0).
 **Notes** — `X-ActionName: addItemsBulk`. The app reads the response as a list of
 items, shaped as in A-LIST-2 (inferred from app 26.12.0).
 
-## PUT /v1/shopping-lists/{listId}/items/{itemId}/complete
+## PUT v1/shopping-lists/{listId}/items/{itemId}/complete
 
 [Mark an item as shopped](domain-language.md#dl-mark-as-shopped): move it to Indkøbte varer.
 
@@ -277,7 +276,7 @@ ticks an item (inferred from app 26.12.0).
 **Notes** — `X-ActionName: markItemAsChecked`. No body. The app reads the response
 as one item, shaped as in A-LIST-2 (inferred from app 26.12.0).
 
-## PUT /v1/shopping-lists/{listId}/items/{itemId}/uncomplete
+## PUT v1/shopping-lists/{listId}/items/{itemId}/uncomplete
 
 [Put an item back](domain-language.md#dl-put-back) from Indkøbte varer.
 
@@ -302,9 +301,9 @@ unticks an item (inferred from app 26.12.0).
 **Notes** — `X-ActionName: markItemAsUnchecked`. No body. The app reads the
 response as one item, shaped as in A-LIST-2 (inferred from app 26.12.0).
 
-## DELETE /v1/shopping-lists/{listId}/items/{itemId}
+## DELETE v1/shopping-lists/{listId}/items/{itemId}
 
-Delete an item. This project does not call it ([decisions](decisions.md), [R-LIST-6](requirements.md#r-list-6)).
+Delete an item. See [decisions](decisions.md) and [R-LIST-6](requirements.md#r-list-6).
 
 | Auth | Cost | Status |
 |---|---|---|
@@ -318,36 +317,21 @@ Delete an item. This project does not call it ([decisions](decisions.md), [R-LIS
 **Response** — none captured.
 
 **Cost & mutation** — <a id="a-list-6"></a>A-LIST-6: removes the item from the
-list for every family member (inferred from app 26.12.0). Who-else-calls: the
+list (inferred from app 26.12.0). Who-else-calls: the
 app, when someone deletes an item (inferred from app 26.12.0).
 
 **Errors** — none captured; the app's own error names are under [Errors the app names](#errors-the-app-names).
 
-**Notes** — `X-ActionName: deleteItem`. Documented so a capture can recognise it,
-not so it is built.
+**Notes** — `X-ActionName: deleteItem`.
 
 ---
 
-## Seen in the app, not used by this project
+## Other calls in the app
 
-Relative to the shopping-list base URL; each inferred from app 26.12.0, none
-captured. Entries in full are written only if this project comes to need one.
-
-| Method | Path | What it does | Cost |
-|---|---|---|---|
-| POST | `/v1/shopping-lists` | create a list (`name`, `description`) | changes the shared list |
-| PUT | `/v1/shopping-lists/{listId}` | rename a list (`name`, `description`) | changes the shared list |
-| DELETE | `/v1/shopping-lists/{listId}` | delete a list | changes the shared list |
-| PUT | `/v1/shopping-lists/{listId}/items/{itemId}` | edit an item (`name`, `categoryId`, `quantity`, `unitName`, `amount`) | changes the shared list |
-| PATCH | `/v1/shopping-lists/{listId}/items/{itemId}/amount/{amount}` | set an item's amount | changes the shared list |
-| PATCH | `/v1/shopping-lists/{listId}/items/{itemId}/remove-offer` | remove an offer from an item | changes the shared list |
-| PUT | `/v1/shopping-lists/{listId}/complete-all` | mark every item as shopped | changes the shared list |
-| PATCH | `/v1/shopping-lists/{listId}/items/undo` | undo, body `items` of `itemId` | changes the shared list |
-| PUT | `/v1/shopping-lists/{listId}/share`, `/unshare` | make or withdraw a sharing link | changes the shared list |
-| DELETE | `/v1/shopping-lists/{listId}/unsubscribe` | leave a shared list | changes the shared list |
-| PUT | `/v1/join` | join a list from a sharing link | changes the shared list |
-| GET | `/v1/shopping-lists/{listId}/auto-complete`, `/popular-suggestions` | item suggestions (`top`, `query`) | reads only |
-| GET | `/v1/categories`, `/v1/units`, `/v1/shopping-lists/member-offer-items` | categories, units, the member's offer items | reads only |
+The app's other shopping-list calls — rename, delete a list, set an amount,
+complete-all, undo, share, suggestions, categories and units — are listed in the
+static read's
+[shopping-list calls](research/2026-10-20-app-26.12.0-static-read.md#shopping-list-calls).
 
 ---
 
@@ -357,19 +341,24 @@ Each is open until the capture answers it; an answered item is deleted.
 
 1. What the login page asks for: email and password, MitID, or a code.
 2. Which redirect URI the configuration serves, and whether it is a custom scheme.
-3. Whether one refresh token covers the `shopping-list` scope, or that scope needs
+3. How many redirect URIs the configuration serves; the app picks one at random
+   for the authorize request and again for the code exchange.
+4. Whether one refresh token covers the `shopping-list` scope, or that scope needs
    its own authorization.
-4. Whether refresh tokens rotate, as the normal session shows it.
-5. Whether a second session logs the phone out.
-6. The real shape of the list and item payloads, of the add, complete and
+5. Whether refresh tokens rotate, as the normal session shows it (what a reused
+   old one does is not tested).
+6. Whether a second session logs the phone out.
+7. The real shape of the list and item payloads, of the add, complete and
    uncomplete requests, and of the errors.
-7. The client id, the identity-provider host and the shopping-list base URL — the
+8. The client id, the identity-provider host and the shopping-list base URL — the
    remote configuration's values.
-8. Token lifetimes.
-9. Where `app_installation_id` comes from.
-10. Whether `X-ActionName` reaches the server, and whether shopping-list calls
+9. Token lifetimes.
+10. Where `app_installation_id` comes from.
+11. Whether `X-ActionName` reaches the server, and whether shopping-list calls
     carry `X-Auth-Compatibility-Mode`.
-11. What the remote configuration request carries, and whether it needs a key.
-12. The `restoreItemOrder` value the app sends on uncomplete.
-13. Whether the items call returns the open items and Indkøbte varer together.
-14. Which calls the app's widget makes when it polls, and how often.
+12. What the remote configuration request carries, and whether it needs a key.
+13. The `restoreItemOrder` value the app sends on uncomplete.
+14. Whether the items call returns the open items and Indkøbte varer together.
+15. Which calls the app's widget makes when it polls, and how often.
+16. Whether a new login triggers device binding, and whether binding a second
+    device affects the phone.
