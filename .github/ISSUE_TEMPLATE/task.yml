@@ -1,0 +1,24 @@
+name: Task
+description: One task from a plan.
+body:
+  - type: textarea
+    id: what-why
+    attributes:
+      label: What and why
+      description: What the task changes, and why it is needed.
+    validations:
+      required: true
+  - type: input
+    id: plan-task
+    attributes:
+      label: Plan and task
+      description: A link to the plan under docs/superpowers/plans/, and the task's number.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance
+      description: What must be true, and which check shows it, for the task to be done.
+    validations:
+      required: true
