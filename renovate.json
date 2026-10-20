@@ -1,0 +1,17 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended", "helpers:pinGitHubActionDigests"],
+  "enabledManagers": ["pep621", "homeassistant-manifest", "github-actions"],
+  "dependencyDashboard": false,
+  "semanticCommits": "enabled",
+  "semanticCommitType": "chore",
+  "semanticCommitScope": "deps",
+  "lockFileMaintenance": { "enabled": true },
+  "packageRules": [
+    {
+      "description": "One PR for the Home Assistant test harness and the Home Assistant it pins.",
+      "matchPackageNames": ["pytest-homeassistant-custom-component", "homeassistant"],
+      "groupName": "home assistant"
+    }
+  ]
+}

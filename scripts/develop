@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# Run a local Home Assistant with the coop_dk integration, for checking a feature in the browser.
+# config/ is gitignored and holds a real HA config: never commit it.
+# Starting HA sends nothing to Coop; setting up the integration does once it can log in, so that
+# needs the owner's yes and the owner's real HA must not hold the Coop login (CLAUDE.md).
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+
+mkdir -p config/custom_components
+if [ ! -f config/configuration.yaml ]; then
+  printf 'default_config:\n' > config/configuration.yaml
+fi
+ln -sfn "$(pwd)/custom_components/coop_dk" config/custom_components/coop_dk
+
+if [ "${1:-}" = "--setup-only" ]; then
+  exit 0
+fi
+
+exec uv run hass -c config --debug

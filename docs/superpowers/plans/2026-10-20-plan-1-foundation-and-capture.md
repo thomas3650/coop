@@ -211,15 +211,15 @@ Pin every action by SHA with a version comment, as `HA-NortecGo` does, and set `
   - `scripts/develop`, adapted from HA-NortecGo's. It creates `config/` with `default_config:`, symlinks `custom_components/coop_dk` into `config/custom_components/`, and runs `uv run hass -c config --debug`.
 - Modify: `README.md`, adding the Commands section: `scripts/develop`, with its cost "no Coop request until the integration is set up".
 
-- [ ] **Step 1:** Run `scripts/develop` in the background and wait for `http://localhost:8123` to answer.
-- [ ] **Step 2: Chrome check.** Use the Chrome tools to:
+- [x] **Step 1:** Run `scripts/develop` in the background and wait for `http://localhost:8123` to answer.
+- [x] **Step 2: Chrome check.** Use the Chrome tools to:
   - open `localhost:8123`;
   - complete onboarding with a throwaway local user;
   - confirm the log shows `coop_dk` loaded with no error.
 
   Stop HA afterwards.
 - [ ] **Step 3: Install the Renovate GitHub App** on `thomas3650/coop`, through the Chrome tools on github.com. If it needs the owner's own sign-in, ask the owner to click it. Expected: Renovate opens its onboarding PR or reads `renovate.json`.
-- [ ] **Step 4:** Commit and open a PR titled `chore: renovate and the dev Home Assistant`.
+- [x] **Step 4:** Commit and open a PR titled `chore: renovate and the dev Home Assistant`.
 
 ### Task 7: The capture scrubber and flow export
 
