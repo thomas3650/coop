@@ -1,0 +1,13 @@
+{
+  "domain": "coop_dk",
+  "name": "Coop",
+  "codeowners": ["@thomas3650"],
+  "config_flow": false,
+  "dependencies": [],
+  "documentation": "https://github.com/thomas3650/coop",
+  "integration_type": "service",
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/thomas3650/coop/issues",
+  "requirements": [],
+  "version": "0.0.0"
+}

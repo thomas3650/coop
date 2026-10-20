@@ -42,3 +42,16 @@ uv run python scripts/check_doc_links.py
 |---|---|
 | `uv run pytest -m live` | Real requests to Coop with the owner's login. **Ask the owner first, every time.** No test is marked `live` yet. |
 | The doc link check (the last gate above) | Reads the repo's Markdown files; no network request. |
+
+The bump step for a releasing PR ([releasing](docs/releasing.md)), with the PR's title in single
+quotes, and the release zip as the release workflow builds it:
+
+```bash
+uv run python scripts/release_check.py release-pr --title='fix: …'
+uv run python scripts/build_zip.py /tmp/coop_dk.zip
+```
+
+| Runnable | What it costs |
+|---|---|
+| The bump step | Fetches `main` from GitHub; edits the manifest's version and the changelog, and commits nothing. |
+| The zip build | Writes one zip file; no network request. |

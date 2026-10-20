@@ -1,0 +1,37 @@
+name: version-check
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, edited]
+
+permissions: {}
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  version-check:
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884  # v10.3.0
+        with:
+          python-version: "3.14"
+          enable-cache: false
+      - name: Title, version and changelog agree
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          # Against the merge base: what this PR changes, even if main has a newer release.
+          # --title= so a title that starts with - isn't read as an option (docs/releasing.md).
+          base="$(git merge-base "$BASE_SHA" "$HEAD_SHA")"
+          uv run --no-project --python 3.14 python scripts/release_check.py pr-check --title="$PR_TITLE" "$base" "$HEAD_SHA"

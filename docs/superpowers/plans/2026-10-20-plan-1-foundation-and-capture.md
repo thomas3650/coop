@@ -195,12 +195,12 @@ Pin every action by SHA with a version comment, as `HA-NortecGo` does, and set `
   - `uv run python scripts/release_check.py release-pr --title='<title>'`, the bump step;
   - `release.yml`, which uploads `coop_dk.zip` built by `build_zip.py`.
 
-- [ ] **Step 1: Write the failing tests.**
+- [x] **Step 1: Write the failing tests.**
   - `test_release_zip_contains_client_source`: `build_zip` into `tmp_path`. Asserts that `coop_dk/manifest.json` and `coop_dk/coop_client/__init__.py` are entries whose zip info is not a symlink (external attr), and that no entry path contains `..`.
   - The ported `release_check` tests: each title type maps to its release level from `HA-NortecGo/docs/releasing.md`, and `docs!:` is rejected.
-- [ ] **Step 2:** Run `uv run pytest tests/test_build_zip.py tests/test_release_check.py -v`. Expected: FAIL (modules missing).
-- [ ] **Step 3:** Implement `build_zip` and port `release_check.py`. Then add the workflows. `release.yml` runs `build_zip.py` and attaches the zip to the GitHub release; the rest follows HA-NortecGo.
-- [ ] **Step 4:** Run `uv run pytest -v && uv run mypy && uv run actionlint && uv run zizmor --offline .github/workflows`. Expected: PASS and clean.
+- [x] **Step 2:** Run `uv run pytest tests/test_build_zip.py tests/test_release_check.py -v`. Expected: FAIL (modules missing).
+- [x] **Step 3:** Implement `build_zip` and port `release_check.py`. Then add the workflows. `release.yml` runs `build_zip.py` and attaches the zip to the GitHub release; the rest follows HA-NortecGo.
+- [x] **Step 4:** Run `uv run pytest -v && uv run mypy && uv run actionlint && uv run zizmor --offline .github/workflows`. Expected: PASS and clean.
 - [ ] **Step 5:** Open a PR titled `ci: integration skeleton and auto-release`. Expected: hassfest and hacs green on the PR, and `version-check` green for the `ci:` title. After the merge, no release is published, because `ci` releases nothing. Add `hassfest`, `hacs` and `version-check` to the required checks.
 
 ### Task 6: Renovate and the dev Home Assistant
