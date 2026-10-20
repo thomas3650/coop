@@ -1,0 +1,109 @@
+name: auto-release
+on:
+  # zizmor: ignore[dangerous-triggers] only successful push runs on main from this repo go on (the decide
+  # job's if:), and no PR code runs.
+  workflow_run:
+    workflows: [lint, tests, gitleaks, hassfest, hacs]
+    types: [completed]
+    branches: [main]
+
+permissions: {}
+
+defaults:
+  run:
+    shell: bash
+
+concurrency:
+  group: auto-release-${{ github.event.workflow_run.event }}-${{ github.event.workflow_run.head_sha }}
+  cancel-in-progress: false
+
+jobs:
+  decide:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      version: ${{ steps.bump.outputs.version }}
+      tag: ${{ steps.bump.outputs.tag }}
+      sha: ${{ steps.commit.outputs.sha }}
+      release: ${{ steps.tag.outputs.release }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884  # v10.3.0
+        with:
+          python-version: "3.14"
+          enable-cache: false
+      - name: The commit
+        id: commit
+        env:
+          RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          sha="$(git rev-parse --verify --quiet "${RUN_SHA}^{commit}")" || { echo "Not a commit: ${RUN_SHA}"; exit 1; }
+          git merge-base --is-ancestor "$sha" origin/main || { echo "${sha} is not on main"; exit 1; }
+          echo "sha=${sha}" >> "$GITHUB_OUTPUT"
+      - name: Is it a bump?
+        id: bump
+        env:
+          SHA: ${{ steps.commit.outputs.sha }}
+        run: uv run --no-project --python 3.14 python scripts/release_check.py bump "$SHA"
+      - name: Did the required workflows pass?
+        id: runs
+        if: steps.bump.outputs.bump == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ steps.commit.outputs.sha }}
+        run: |
+          gh api "repos/${REPO}/actions/runs?head_sha=${SHA}&event=push&per_page=100" > "${RUNNER_TEMP}/runs.json"
+          rc=0
+          uv run --no-project --python 3.14 python scripts/release_check.py runs-green < "${RUNNER_TEMP}/runs.json" || rc=$?
+          case "$rc" in
+            0) echo "green=true" >> "$GITHUB_OUTPUT" ;;
+            1) echo "Not all required workflows have passed yet: nothing to release in this run" ;;
+            *) exit "$rc" ;;
+          esac
+      - name: The tag
+        id: tag
+        if: steps.runs.outputs.green == 'true'
+        env:
+          TAG: ${{ steps.bump.outputs.tag }}
+          SHA: ${{ steps.commit.outputs.sha }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          # The repo is public, so ls-remote works without credentials (persist-credentials: false).
+          # A tag already on this commit is fine: the owner's recovery for the workflow-scope limit
+          # (docs/releasing.md, When a release fails) pushes it by hand and re-runs this run.
+          tagged="$(git ls-remote origin "refs/tags/${TAG}" "refs/tags/${TAG}^{}" \
+            | uv run --no-project --python 3.14 python scripts/release_check.py tag-commit "$TAG")"
+          if [ -n "$tagged" ] && [ "$tagged" != "$SHA" ]; then
+            echo "Tag ${TAG} points at ${tagged}, not ${SHA}"
+            exit 1
+          fi
+          # Another run for this merge (the concurrency group runs them one at a time) may have
+          # released it already. If this check fails for another reason, release.yml checks again.
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            echo "Release ${TAG} already exists: nothing to do"
+            exit 0
+          fi
+          echo "release=true" >> "$GITHUB_OUTPUT"
+
+  release:
+    needs: decide
+    if: needs.decide.outputs.release == 'true'
+    permissions:
+      contents: write
+    uses: ./.github/workflows/release.yml  # zizmor: ignore[self-repository] actionlint and GitHub's documented syntax take ./
+    with:
+      tag: ${{ needs.decide.outputs.tag }}
+      sha: ${{ needs.decide.outputs.sha }}

@@ -1,0 +1,82 @@
+name: release
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: The tag to release, v<version>
+        required: true
+        type: string
+      sha:
+        description: The commit to release
+        required: true
+        type: string
+
+permissions: {}
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: ${{ inputs.sha }}
+          persist-credentials: false
+      - name: The tag and the commit
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          # The tag is an input: a called workflow sees the caller's github context.
+          echo "TAG=${INPUT_TAG}" >> "$GITHUB_ENV"
+          echo "COMMIT=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+      - name: Tag must match manifest.json version
+        run: |
+          version="$(python3 -c 'import json; print(json.load(open("custom_components/coop_dk/manifest.json"))["version"])')"
+          test "${TAG}" = "v${version}" || { echo "Tag ${TAG} != v${version}"; exit 1; }
+          echo "VERSION=${version}" >> "$GITHUB_ENV"
+      - name: Extract release notes from CHANGELOG.md
+        run: |
+          awk -v v="$VERSION" '
+            $0 ~ "^## \\[" v "\\]" {found=1; next}
+            found && /^## \[/ {exit}
+            found {print}
+          ' CHANGELOG.md > notes.md
+          grep -q '[^[:space:]]' notes.md || { echo "No CHANGELOG section for $VERSION"; exit 1; }
+      - name: Skip a release that exists
+        id: existing
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            echo "Release ${TAG} already exists: nothing to do"
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: The tag must point at the commit
+        if: steps.existing.outputs.exists != 'true'
+        run: |
+          # The repo is public, so ls-remote works without credentials (persist-credentials: false).
+          tagged="$(git ls-remote origin "refs/tags/${TAG}" "refs/tags/${TAG}^{}" \
+            | awk -v t="refs/tags/${TAG}" '$2 == t "^{}" {p=$1} $2 == t {l=$1} END {print (p != "" ? p : l)}')"
+          if [ -n "$tagged" ] && [ "$tagged" != "$COMMIT" ]; then
+            echo "Tag ${TAG} points at ${tagged}, not ${COMMIT}"
+            exit 1
+          fi
+      - name: Build the zip HACS downloads
+        if: steps.existing.outputs.exists != 'true'
+        run: |
+          # Stdlib only, so the runner's python3 builds it. The client is a symlink in the tree; the
+          # zip holds its source as regular files.
+          python3 scripts/build_zip.py "${RUNNER_TEMP}/coop_dk.zip"
+      - name: Create the GitHub release
+        if: steps.existing.outputs.exists != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release create "$TAG" "${RUNNER_TEMP}/coop_dk.zip" --target "$COMMIT" --title "$TAG" --notes-file notes.md

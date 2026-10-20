@@ -22,6 +22,7 @@ change here is one table row.**
 | `docs/api.md` | the Coop API as observed: hosts, the bootstrap, one entry per endpoint, and **Unknowns** | one entry in the shape `docs/api-standard.md` sets, every claim **measured** or **inferred**; never a decompiled class name |
 | `docs/api-standard.md` | the shape of a `docs/api.md` entry, redaction and the checklist | change only when the standard itself changes |
 | `docs/reverse-engineering.md` | how this project's capture rig differs from nortecgo's and nota's | one delta row; what a run showed goes in `docs/research/` |
+| `docs/releasing.md` | how a merge releases, and what differs from HA-NortecGo's release rules | one row in its table |
 | `CLAUDE.md` | the rules an agent must not break | a rule, only when it binds behaviour |
 
 Precedence when documents disagree: **code > `docs/research/` >

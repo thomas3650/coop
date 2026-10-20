@@ -27,6 +27,7 @@ this file — one copy of a fact, so a correction lands once.
 | `docs/api.md` | the Coop API as observed, one entry per endpoint, and its **Unknowns** | `A-<AREA>-<n>` |
 | `docs/api-standard.md` | the shape every `docs/api.md` entry takes, redaction and the checklist | the section |
 | `docs/reverse-engineering.md` | how the capture rig differs from the owner's other two repos' | the section |
+| `docs/releasing.md` | how a merge releases, and what differs from HA-NortecGo's release rules | the section |
 
 **Precedence when documents disagree: code > `docs/research/` >
 `docs/requirements.md`.** Never resolve a contradiction by picking the

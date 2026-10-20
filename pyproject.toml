@@ -15,6 +15,7 @@ dev = [
     "actionlint-py",
     "zizmor",
     "coop-client",
+    "types-pyyaml",
 ]
 capture = [
     "mitmproxy",
@@ -37,14 +38,15 @@ extend-exclude = ["docs", ".claude", ".superpowers"]
 [tool.mypy]
 python_version = "3.14"
 strict = true
-files = ["packages/coop-client/src", "scripts", "tests", "conftest.py"]
+files = ["packages/coop-client/src", "custom_components", "scripts", "tests", "conftest.py"]
+mypy_path = "scripts"
 explicit_package_bases = true
 
 [tool.pytest.ini_options]
 addopts = ["-m", "not live", "--strict-markers"]
 asyncio_mode = "auto"
 testpaths = ["tests"]
-pythonpath = ["tests"]
+pythonpath = ["tests", "scripts"]
 markers = [
     "live: reaches the real Coop API with the owner's credentials from .env. Excluded by default; run only with `-m live` and a fresh ask.",
 ]
