@@ -128,10 +128,11 @@ below is **inferred**, none is measured. The findings go into a dated
     acceptable.
   - **Autonomy.** No release needs a separate ask: merging a releasing PR is
     what releases it. The agent merges when ready, as the owner set out.
-- **GitHub.** The repo itself, secret scanning and push protection. Creating
-  the public GitHub repo is outward-facing, so it waits for the owner's yes
-  after this spec is approved. The plan's tasks are then filed as GitHub issues
-  on it, which the owner asked for.
+- **GitHub.** The agent handles GitHub without a separate ask each time; the
+  owner's decision ([memory](../../memory.md)). That covers:
+  - creating the public repo once this spec is approved;
+  - its settings, including secret scanning, push protection and branch rules;
+  - filing the plan's tasks as issues and keeping them up to date.
 
 ### 2. The capture — the go/no-go gate
 
