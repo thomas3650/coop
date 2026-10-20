@@ -55,3 +55,14 @@ uv run python scripts/build_zip.py /tmp/coop_dk.zip
 |---|---|
 | The bump step | Fetches `main` from GitHub; edits the manifest's version and the changelog, and commits nothing. |
 | The zip build | Writes one zip file; no network request. |
+
+The dev Home Assistant at `http://localhost:8123`, with the integration linked from the working
+tree; its config folder is gitignored:
+
+```bash
+scripts/develop
+```
+
+| Runnable | What it costs |
+|---|---|
+| The dev Home Assistant | No request to Coop until the integration is set up and can log in; that needs the owner's yes, and the owner's real Home Assistant must not hold the Coop login at the same time. |
